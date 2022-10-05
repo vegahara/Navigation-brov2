@@ -1,0 +1,16 @@
+# Ros2 ignores
+build/
+install/
+log/
+__pycache__/
+
+# Copyrighted api from sonar manufacturer
+DSSPParser.hpp
+DSSPParser.cpp
+DVSFileWriter.hpp
+DVSFileWriter.cpp
+EthernetSonarAPI.hpp
+EthernetSonarAPI.cpp
+
+# Julia
+Manifest.toml

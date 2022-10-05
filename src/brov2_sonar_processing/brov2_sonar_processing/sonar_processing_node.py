@@ -17,7 +17,7 @@ from brov2_sonar_processing import plot_utils as pu
 
 from julia.api import Julia
 jl = Julia(compiled_modules=False)
-jl.eval('import Pkg; Pkg.activate("src/brov2_sonar_processing/brov2_sonar_processing/KnnAlgorithms");')
+jl.eval('import Pkg; Pkg.activate("src/brov2_sonar_processing/brov2_sonar_processing/KnnAlgorithms"); Pkg.update()')
 jl.eval('import KnnAlgorithms')
 knn = jl.eval('KnnAlgorithms.KnnAlgorithm.knn')
 
