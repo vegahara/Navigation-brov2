@@ -1,52 +1,113 @@
 import pandas as pd
-import rclpy
-import rosbag2_py
+from math import modf
+
+import rosbag2_py as rosbag2
+from rclpy.serialization import serialize_message
+from rclpy.time import Time
+
 from brov2_interfaces.msg import Sonar
 from brov2_interfaces.msg import DVL
 from nav_msgs.msg import Odometry
 
-
-df = pd.read_csv('my_csv_file.csv')
-
-sonar_msg = Sonar()
-
-sonar_msg.head
+from utility_functions import quaternion_from_euler
 
 
+def get_rosbag_options(path, serialization_format='cdr'):
+    storage_options = rosbag2.StorageOptions(uri=path, storage_id='sqlite3')
+
+    converter_options = rosbag2.ConverterOptions(
+        input_serialization_format=serialization_format,
+        output_serialization_format=serialization_format)
+
+    return storage_options, converter_options
 
 
-with rosbag.Bag('output.bag', 'w') as bag:
-    for row in range(df.shape[0]):
-        timestamp = rospy.Time.from_sec(df['timestamp'][row])
-        imu_msg = Imu()
-        imu_msg.header.stamp = timestamp
+def create_topic(writer, topic_name, topic_type, serialization_format='cdr'):
 
-        # Populate the data elements for IMU
-        # e.g. imu_msg.angular_velocity.x = df['a_v_x'][row]
+    topic_name = topic_name
+    topic = rosbag2.TopicMetadata(name=topic_name, type=topic_type,
+                                     serialization_format=serialization_format)
 
-        bag.write("/imu", imu_msg, timestamp)
+    writer.create_topic(topic)
+        
+def convert_data(writer, df_arr, topic_name_arr, msg_type_arr, populate_fcn_arr):
+    for df, topic_name, msg_type, populate_fcn in zip(df_arr, topic_name_arr, msg_type_arr, populate_fcn_arr): 
+        for row in range(df.shape[0]):
+            msg = msg_type()
 
-        gps_msg = NavSatFix()
-        gps_msg.header.stamp = timestamp
+            seconds_decimal, seconds_int = modf(df['timestamp'][row])
+            time_stamp = Time(seconds = seconds_int, nanoseconds = seconds_decimal * (10 ** 9))
 
-        # Populate the data elements for GPS
+            msg = msg_type()
+            msg = populate_fcn(msg, df, row) 
+            msg.header.stamp = time_stamp.to_msg()    
+            
+            writer.write(topic_name, serialize_message(msg), time_stamp.nanoseconds)
 
-        bag.write("/gps", gpu_msg, timestamp)
+        print("Data with topic name ", topic_name, " is written to bag")    
 
-        from rosidl_runtime_py.utilities import get_message
+def populate_sonar_msg(sonar_msg, df, row):
+    data = df[' data'][row]
 
-import rosbag2_py._rosbag2_py as rosbag2_py
-from rclpy.serialization import deserialize_message
+    # populate msg..
 
+    return sonar_msg
 
-reader = rosbag2_py.SequentialReader()
-reader.open('rosbag2_2020_01_06-14_58_37')
-i = 0 
-type_map = reader.get_all_topics_and_types()
-while reader.has_next():
-    print(f'{i}')
-    i += 1
-    topic, data = reader.read_next()
-    msg_type = get_message(type_map[topic])
-    msg = deserialize_message(data, msg_type)
-    print(msg)
+def populate_dvl_msg(dvl_msg, df, row):
+    dvl_msg.altitude  = df[' alt (m)'][row]
+
+    return dvl_msg
+
+def populate_odom_msg(odom_msg, df, row):
+    phi = df[' phi (rad)'][row]
+    theta = df[' theta (rad)'][row]
+    psi = df[' psi (rad)'][row]
+
+    quaternion = quaternion_from_euler(phi, theta, psi)
+    w, x, y, z = quaternion
+
+    odom_msg.pose.pose.orientation.w = w
+    odom_msg.pose.pose.orientation.x = x
+    odom_msg.pose.pose.orientation.y = y
+    odom_msg.pose.pose.orientation.z = z
+
+    odom_msg.pose.pose.position.x = df[' x (m)'][row]
+    odom_msg.pose.pose.position.y = df[' y (m)'][row]
+    odom_msg.pose.pose.position.z = df[' z (m)'][row]
+
+    return odom_msg
+
+def main():
+    # Set up bag
+    bag_path = 'bags/test_bags'
+
+    storage_options, converter_options = get_rosbag_options(bag_path)
+
+    writer = rosbag2.SequentialWriter()
+    writer.open(storage_options, converter_options)
+
+    # Set up topics
+    sonar_topic_name = 'Sonar'
+    dvl_topic_name = 'DVL'
+    odom_topic_name = 'Odometry'
+
+    create_topic(writer, sonar_topic_name, 'brov2_interfaces/msg/Sonar')
+    create_topic(writer, dvl_topic_name, 'brov2_interfaces/msg/DVL')
+    create_topic(writer, odom_topic_name, 'nav_msgs/msg/Odometry')
+
+    # Load data
+    df_sonar = pd.read_csv('bags/SonarData.csv')
+    df_dvl = pd.read_csv('bags/EstimatedState.csv') 
+    df_odom = pd.read_csv('bags/EstimatedState.csv')
+
+    convert_data(writer,
+                [df_dvl, df_odom],  
+                [dvl_topic_name, odom_topic_name], 
+                [DVL, Odometry], 
+                [populate_dvl_msg, populate_odom_msg]
+    )
+
+    return 0
+
+if __name__ == "__main__":
+    main()

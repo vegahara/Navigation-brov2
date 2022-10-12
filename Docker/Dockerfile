@@ -3,6 +3,9 @@ FROM osrf/ros:galactic-desktop
 RUN apt-get update && apt-get  install -y wget python3-pip && \
     python3 -m pip install --upgrade pip
 
+# Install rosbad2 packages
+RUN apt-get update && apt-get install -y ros-galactic-ros2bag ros-galactic-rosbag2-transport
+
 # Install ncurses lib
 RUN apt-get update && apt-get install -y libncurses5-dev libncursesw5-dev 
 
