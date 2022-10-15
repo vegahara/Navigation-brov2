@@ -1,4 +1,5 @@
 import math
+
 import numpy as np
 from numpy.linalg import norm
 
@@ -46,6 +47,31 @@ def pitch_yaw_from_quaternion(w, x, y, z):
         yaw = math.atan2(t3, t4)
      
         return pitch, yaw # in radians
+
+def quaternion_from_euler(roll, pitch, yaw):
+    """Converts (Tait-Bryan) Euler angles to quaternion. From (10.39) in 
+    https://folk.ntnu.no/edmundfo/msc2019-2020/sf13chapters.pdf.
+
+    Args:
+        roll            : Roll in radians
+        pitch           : Pitch in radians
+        yaw             : Yaw in radians
+
+    Returns:
+        quaternion         (4,1 ndarray) : Normalized quaternion in NED
+    """
+    w = math.cos(roll / 2) * math.cos(pitch / 2) * math.cos(yaw / 2) + \
+        math.sin(roll / 2) * math.sin(pitch / 2) * math.sin(yaw / 2) 
+    x = math.sin(roll / 2) * math.cos(pitch / 2) * math.cos(yaw / 2) - \
+        math.cos(roll / 2) * math.sin(pitch / 2) * math.sin(yaw / 2)
+    y = math.cos(roll / 2) * math.sin(pitch / 2) * math.cos(yaw / 2) + \
+        math.sin(roll / 2) * math.cos(pitch / 2) * math.sin(yaw / 2)
+    z = math.cos(roll / 2) * math.cos(pitch / 2) * math.sin(yaw / 2) - \
+        math.sin(roll / 2) * math.sin(pitch / 2) * math.cos(yaw / 2)    
+    
+    quaternion = np.array([w, x, y, z])
+
+    return quaternion / norm(quaternion)
 
 
 def ENU_to_NED_conversion(quaternion):

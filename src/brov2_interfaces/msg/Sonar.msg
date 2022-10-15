@@ -1,4 +1,4 @@
 std_msgs/Header header
 # Sonar data
-byte[500] data_zero
-byte[500] data_one
+byte[1000] data_zero
+byte[1000] data_one
