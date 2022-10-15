@@ -7,3 +7,9 @@ docker build . -t landmark_det_image -f Docker/Dockerfile
 If the json step fail run ´git submodule update --init´ before building the image again.
 
 To run the docker container run `run_docker.sh` from the workspace.
+
+To open an additional bash terminal run
+
+```
+docker exec -it landmark_detection /bin/bash
+```
