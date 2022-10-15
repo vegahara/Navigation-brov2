@@ -4,6 +4,7 @@ import utility_functions
 
 from rclpy.node import Node
 from brov2_interfaces.msg import Sonar
+from brov2_interfaces.msg import SonarProcessed
 from brov2_interfaces.msg import DVL
 from nav_msgs.msg import Odometry
 import math
@@ -27,37 +28,55 @@ class SonarProcessingNode(Node):
 
     def __init__(self):
         super().__init__('sonar_data_processor')
-        self.declare_parameters(namespace='',
-                                parameters=[('sonar_data_topic_name', 'sonar_data'),
-                                            ('dvl_vel_topic_name', 'dvl/velocity_estimate'),
-                                            ('qekf_state_estimate_topic_name', '/CSEI/observer/odom'),
-                                            ('scan_lines_per_stored_frame', 100),
-                                            ('processing_period', 0.0001),
-                                            ('number_of_samples_sonar', 500),
-                                            ('range_sonar', 30)])
-                                            
-        (sonar_data_topic_name, dvl_vel_topic_name, qekf_state_estimate_topic_name, self.scan_lines_per_stored_frame, 
-        processing_period, number_of_samples_sonar, range_sonar) = self.get_parameters(['sonar_data_topic_name', 
-                                                                                        'dvl_vel_topic_name',
-                                                                                        'qekf_state_estimate_topic_name',
-                                                                                        'scan_lines_per_stored_frame'
-                                                                                        'processing_period',
-                                                                                        'number_of_samples_sonar',
-                                                                                        'range_sonar'])
+        self.declare_parameters(namespace='', parameters=[
+            ('sonar_data_topic_name', 'sonar_data'),
+            ('sonar_processed_topic_name', 'sonar_processed'),
+            ('dvl_vel_topic_name', 'dvl/velocity_estimate'),
+            ('qekf_state_estimate_topic_name', '/CSEI/observer/odom'),
+            ('scan_lines_per_stored_frame', 100),
+            ('processing_period', 0.0001),
+            ('number_of_samples_sonar', 1000),
+            ('range_sonar', 30)
+        ])
+            
+        (sonar_data_topic_name, sonar_processed_topic_name, 
+        dvl_vel_topic_name, qekf_state_estimate_topic_name, 
+        self.scan_lines_per_stored_frame, 
+        processing_period, number_of_samples_sonar, 
+        range_sonar) = self.get_parameters([
+            'sonar_data_topic_name',
+            'sonar_processed_topic_name', 
+            'dvl_vel_topic_name',
+            'qekf_state_estimate_topic_name',
+            'scan_lines_per_stored_frame',
+            'processing_period',
+            'number_of_samples_sonar',
+            'range_sonar'
+        ])
 
 
 
-        self.sonar_subscription = self.create_subscription(Sonar, sonar_data_topic_name.value, self.sonar_sub, 10)
-        self.dvl_subscription   = self.create_subscription(DVL, dvl_vel_topic_name.value, self.dvl_sub, 10)
-        self.state_subscription = self.create_subscription(Odometry, qekf_state_estimate_topic_name.value, self.state_sub, 10)
+        self.sonar_subscription = self.create_subscription(
+            Sonar, sonar_data_topic_name.value, self.sonar_sub, 10
+        )
+        self.dvl_subscription   = self.create_subscription(
+            DVL, dvl_vel_topic_name.value, self.dvl_sub, 10
+        )
+        self.state_subscription = self.create_subscription(
+            Odometry, qekf_state_estimate_topic_name.value, self.state_sub, 10
+        )
+        self.sonar_puplisher  = self.create_publisher(
+            SonarProcessed, sonar_processed_topic_name.value, 10
+            )
 
         # Sonar data processing - initialization
         self.side_scan_data = ssd.side_scan_data(number_of_samples_sonar.value, range_sonar.value)
-        self.spline = csr.cubic_spline_regression()
+        self.spline = csr.cubic_spline_regression(nS = number_of_samples_sonar.value)
         self.current_swath = ssd.swath_structure()
         self.current_altitude = 0
         self.current_state = Odometry()
         self.state_initialized = False
+        self.altitude_valid = False
         self.buffer_unprocessed_swaths = []
         self.buffer_processed_coordinate_array = []
 
@@ -69,8 +88,9 @@ class SonarProcessingNode(Node):
     
     ### SENSOR AND STATE SUBSCRIPTION FUNCTIONS
     def sonar_sub(self, sonar_msg):
-        if not self.state_initialized:
+        if not self.state_initialized or not self.altitude_valid:
             return
+
         # Right transducer data handling
         transducer_raw_right = sonar_msg.data_zero
         self.current_swath.swath_right = [int.from_bytes(byte_val, "big") for byte_val in transducer_raw_right] # Big endian
@@ -86,18 +106,34 @@ class SonarProcessingNode(Node):
     def dvl_sub(self, dvl_msg):
         # Altitude values of -1 are invalid
         if dvl_msg.altitude != -1:
-            self.current_altitude = dvl_msg.altitude
+            self.altitude_valid = True
+        else:
+            self.altitude_valid = False
+        self.current_altitude = dvl_msg.altitude
 
     def state_sub(self, state_msg):
         self.current_state = state_msg
         self.state_initialized = True
 
+    def sonar_pub(self, swath):
+        msg = SonarProcessed()
+        msg.header = self.current_state.header
+        msg.pose = self.current_state.pose.pose
+        msg.altitude = self.current_altitude
+        msg.data_stb = [x.to_bytes(1, 'big') for x in swath.swath_right]
+        msg.data_port = [x.to_bytes(1, 'big') for x in swath.swath_left]
 
+        self.sonar_puplisher.publish(msg)
 
     ### DATA PROCESSING FUNCTIONS
     def blind_zone_removal(self, swath):
         r_FBR = self.current_altitude / np.sin(self.side_scan_data.theta + self.side_scan_data.alpha/2)
         index_FBR = int(np.floor_divide(r_FBR, self.side_scan_data.res))
+        
+        # Whole swath is blindzone
+        if(index_FBR > len(swath)):
+            index_FBR = len(swath)
+        
         swath[:index_FBR] = [np.nan] * index_FBR
         return swath
 
@@ -192,12 +228,15 @@ class SonarProcessingNode(Node):
             return
         
         # Interpolate and construct frame if sufficient amount of swaths has arrived
-        buffer_size = len(self.buffer_processed_coordinate_array)
-        if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
-            _,_,_,_,_,_,_,_,_ = self.construct_frame()
-            self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
+        # buffer_size = len(self.buffer_processed_coordinate_array)
+        # if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
+        #     _,_,_,_,_,_,_,_,_ = self.construct_frame()
+        #     self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
 
         swath_structure = self.buffer_unprocessed_swaths[0]
+
+        # Publish data to landmark detector
+        self.sonar_pub(swath_structure)
 
         # Intensity normalization
         swath_structure.swath_right,_ = self.spline.swath_normalization(swath_structure.swath_right)

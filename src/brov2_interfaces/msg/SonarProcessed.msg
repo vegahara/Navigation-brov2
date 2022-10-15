@@ -1,8 +1,8 @@
 std_msgs/Header header
 
 # Sonar data
-byte[500] data_starboard
-byte[500] data_port
+byte[1000] data_stb
+byte[1000] data_port
 
 # Measured altitude to the bottom (m)
 float64 altitude

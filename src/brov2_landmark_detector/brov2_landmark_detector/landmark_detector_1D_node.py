@@ -12,7 +12,7 @@ class Swath:
 
     def __init__(self):
         self.swath_port = []        # Port side sonar data
-        self.swath_starboard = []   # Starboard side sonar data
+        self.swath_stb = []         # Starboard side sonar data
 
         self.pose = None            # State of the sonar upon swath arrival
         self.altitude = None        # Altitude of platform upon swath arrival
@@ -27,7 +27,7 @@ class Landmark:
 # Class for containing all sonar parameters
 class SideScanSonar:
 
-    def __init__(self, nS=500, rng=30, sensor_angle_placement=pi/4, sensor_opening=pi/3):
+    def __init__(self, nS=1000, rng=30, sensor_angle_placement=pi/4, sensor_opening=pi/3):
 
         self.nSamples = nS                              # Number of samples per active side and ping
         self.range = rng                                # Sonar range in meters
@@ -48,7 +48,7 @@ class LandmarkDetector1D(Node):
         super().__init__('landmark_detector')
 
         self.declare_parameters(namespace='',
-            parameters=[('sonar_data_topic_name', 'sonar_processed_data'),
+            parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('landmark_detector_threshold', 10)]
         )
                       
@@ -78,9 +78,9 @@ class LandmarkDetector1D(Node):
         swath.altitude = sonar_processed_msg.altitude
         swath.pose = sonar_processed_msg.pose
 
-        data_starboard = sonar_processed_msg.data_starboard
-        swath.swath_starboard = [
-            int.from_bytes(byte_val, "big") for byte_val in data_starboard
+        data_stb = sonar_processed_msg.data_stb
+        swath.swath_stb = [
+            int.from_bytes(byte_val, "big") for byte_val in data_stb
         ] # Big endian
 
         data_port = sonar_processed_msg.data_port
@@ -96,8 +96,8 @@ class LandmarkDetector1D(Node):
 
         shadow_properties, echo_properties = self.find_swath_properties(swath)
 
-        shadow_landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_starboard)))
-        echo_landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_starboard)))
+        shadow_landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_stb)))
+        echo_landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_stb)))
         
         for peak, width, prominence in shadow_properties:
             if (2 * width) / prominence < self.landmark_threshold:
@@ -116,7 +116,7 @@ class LandmarkDetector1D(Node):
 
     def find_swath_properties(self, swath: Swath):
 
-        swath_array = np.flip(swath.swath_port) + swath.swath_starboard
+        swath_array = np.flip(swath.swath_port) + swath.swath_stb
 
         # Find all possible shadows
 
@@ -124,7 +124,7 @@ class LandmarkDetector1D(Node):
         swath_flipped = self.flip_swath(swath)
 
         shadow_peaks_left = find_peaks(swath_flipped.swath_port) 
-        shadow_peaks_right = find_peaks(swath_flipped.swath_starboard)
+        shadow_peaks_right = find_peaks(swath_flipped.swath_stb)
 
         # Remove first peaks as it does not correspond to any landmark and cocatinate shadow peaks
         shadow_peaks_left = np.delete(shadow_peaks_left, 0)
@@ -137,7 +137,7 @@ class LandmarkDetector1D(Node):
         # Find all possible echos
         echo_peaks_left = find_peaks(swath.swath_port) 
         
-        echo_peaks_right = find_peaks(swath.swath_starboard) 
+        echo_peaks_right = find_peaks(swath.swath_stb) 
 
         # Remove first peaks as it does not correspond to any landmark and cocatinate shadow peaks
         echo_peaks_left = np.delete(echo_peaks_left, 0)

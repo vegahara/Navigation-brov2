@@ -58,19 +58,18 @@ def convert_data(writer, df_arr, topic_name_arr, msg_type_arr, populate_fcn_arr)
 
 def populate_sonar_msg(sonar_msg, df, row):
     # Just discarding last value in data for now, should be investigated
-    # Some messages has only 500 bytes and gets discarded
     
+    if not (df[' entity '][row] == ' Sidescan'):
+        return sonar_msg, False
+
     data = df[' data'][row]
     sonar_data = []
     
     for i in range(0, len(data), 2):
         sonar_data.append(int(data[i:i+2], base=16))
 
-    if (len(sonar_data) != 2001):
-        return sonar_msg, False
-    else:
-        sonar_msg.data_zero = [int_val.to_bytes(2, 'big') for int_val in sonar_data[:len(sonar_data)//2]]
-        sonar_msg.data_one = [int_val.to_bytes(2, 'big') for int_val in sonar_data[len(sonar_data)//2:-1]]
+    sonar_msg.data_zero = [int_val.to_bytes(1, 'big') for int_val in sonar_data[:len(sonar_data)//2]]
+    sonar_msg.data_one = [int_val.to_bytes(1, 'big') for int_val in sonar_data[len(sonar_data)//2:-1]]
 
     return sonar_msg, True
 
@@ -100,7 +99,7 @@ def populate_odom_msg(odom_msg, df, row):
 
 def main():
     # Set up bag
-    bag_path = 'bags/test_sonar'
+    bag_path = 'bags/data'
 
     storage_options, converter_options = get_rosbag_options(bag_path)
 
@@ -108,9 +107,9 @@ def main():
     writer.open(storage_options, converter_options)
 
     # Set up topics
-    sonar_topic_name = 'Sonar'
-    dvl_topic_name = 'DVL'
-    odom_topic_name = 'Odometry'
+    sonar_topic_name = 'sonar_data'
+    dvl_topic_name = 'dvl/velocity_estimate'
+    odom_topic_name = '/CSEI/observer/odom'
 
     create_topic(writer, sonar_topic_name, 'brov2_interfaces/msg/Sonar')
     create_topic(writer, dvl_topic_name, 'brov2_interfaces/msg/DVL')
