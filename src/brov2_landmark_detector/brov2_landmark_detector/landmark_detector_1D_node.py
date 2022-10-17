@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.signal import find_peaks, peak_prominences, peak_widths
 from math import pi, floor
+from typing import List
 
 from rclpy.node import Node
 
@@ -38,11 +39,11 @@ class SideScanSonar:
     
 class LandmarkDetector1D(Node):
 
-    def __init__(self, sonar: SideScanSonar, threshold: float = 10):
-        self.shadow_landmarks = []                      # Containing all detected shadow landmarks 
-        self.echo_landmarks = []                        # Containing all detected echo landmarks   
-        self.sonar = sonar 
-        self.landmark_threshold = threshold             # Arbitrary threshold for which landmarks to throw away
+    # def __init__(self, sonar: SideScanSonar, threshold: float = 10):
+    #     self.shadow_landmarks = []                      # Containing all detected shadow landmarks 
+    #     self.echo_landmarks = []                        # Containing all detected echo landmarks   
+    #     self.sonar = sonar 
+    #     self.landmark_threshold = threshold             # Arbitrary threshold for which landmarks to throw away
 
     def __init__(self):
         super().__init__('landmark_detector')
@@ -68,7 +69,7 @@ class LandmarkDetector1D(Node):
         # Landmark detection - initialization
         self.shadow_landmarks = []                      # Containing all detected shadow landmarks 
         self.echo_landmarks = []                        # Containing all detected echo landmarks   
-        
+
         self.get_logger().info("Landmark detector node initialized.")
 
     def sonar_processed_callback(self, sonar_processed_msg):
@@ -92,83 +93,63 @@ class LandmarkDetector1D(Node):
 
     def find_landmarks(self, swath: Swath):
 
-        swath = self.normalize_swath(swath)
-
-        shadow_properties, echo_properties = self.find_swath_properties(swath)
-
-        shadow_landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_stb)))
-        echo_landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_stb)))
-        
-        for peak, width, prominence in shadow_properties:
-            if (2 * width) / prominence < self.landmark_threshold:
-                self.shadow_landmarks.append(Landmark(self.get_global_pos(swath, peak)), width, prominence)
-                shadow_landmarks[peak - floor(width/2):peak + floor(width/2)] = 1
-                
-        for peak, width, prominence in echo_properties:
-            if (2 * width) / prominence < self.landmark_threshold:
-                self.echo_landmarks.append(Landmark(self.get_global_pos(swath, peak)), width, prominence)
-                echo_landmarks[peak - floor(width/2):peak + floor(width/2)] = 1
-
-        # How to handle landmark detection when we detect both shadows and echoes? Should they be matched up?
-
-        return shadow_landmarks, echo_landmarks
-
-
-    def find_swath_properties(self, swath: Swath):
-
-        swath_array = np.flip(swath.swath_port) + swath.swath_stb
-
-        # Find all possible shadows
-
-        # Flip the swath to make all shadows peaks
-        swath_flipped = self.flip_swath(swath)
-
-        shadow_peaks_left = find_peaks(swath_flipped.swath_port) 
-        shadow_peaks_right = find_peaks(swath_flipped.swath_stb)
-
-        # Remove first peaks as it does not correspond to any landmark and cocatinate shadow peaks
-        shadow_peaks_left = np.delete(shadow_peaks_left, 0)
-        shadow_peaks_right = np.delete(shadow_peaks_right, 0)
-        shadow_peaks = np.flip(shadow_peaks_left) + shadow_peaks_right
-
-        shadow_promineces, shadow_left_bases, shadow_right_bases = peak_prominences(swath_array, shadow_peaks_left)
-        shadow_widths = peak_widths(swath_array, shadow_peaks, 0.5, (shadow_promineces, shadow_left_bases, shadow_right_bases))
-
-        # Find all possible echos
-        echo_peaks_left = find_peaks(swath.swath_port) 
-        
-        echo_peaks_right = find_peaks(swath.swath_stb) 
-
-        # Remove first peaks as it does not correspond to any landmark and cocatinate shadow peaks
-        echo_peaks_left = np.delete(echo_peaks_left, 0)
-        echo_peaks_right = np.delete(echo_peaks_right, 0)
-        echo_peaks = np.flip(echo_peaks_left) + echo_peaks_right
-
-        echo_promineces, echo_left_bases, echo_right_bases = peak_prominences(swath_array, echo_peaks_left)
-        echo_widths = peak_widths(swath_array, echo_peaks, 0.5, (echo_promineces, echo_left_bases, echo_right_bases))
-
+        # Find all properties of swath. Make sure swath are flipped right way
+        # To find shadows, swath is flipped
         shadow_properties = []
         echo_properties = []
 
-        for peak, prominence, width in shadow_peaks, shadow_promineces, shadow_widths:
-            shadow_properties.append((peak, prominence, width))  
-
-        for peak, prominence, width in echo_peaks, echo_promineces, echo_widths:
-            echo_properties.append((peak, prominence, width)) 
-
-        return shadow_properties, echo_properties
-
-
-    def flip_swath(self, swath: Swath):
+        swath_inverted = self.invert_swath(swath)
+        shadow_properties.extend(self.find_swath_properties(np.flip(swath_inverted.swath_port)))
+        shadow_properties.extend(self.find_swath_properties(swath_inverted.swath_stb))
         
-        # Do some flipping of the swath
-        swath_flipped = swath
+        echo_properties.extend(self.find_swath_properties(np.flip(swath.swath_port)))
+        echo_properties.extend(self.find_swath_properties(swath.swath_stb))
 
-        return swath_flipped
+        _shadow_landmarks = self.extract_landmarks(swath, shadow_properties)
+        _echo_landmarks = self.extract_landmarks(swath, echo_properties)
 
-    def normalize_swath(self, swath: Swath, min: int = 0, max: int = 1000):
-        pass
+        # How to handle landmark detection when we detect both shadows and echoes? Should they be matched up?
 
-    def get_global_pos(swath: Swath, peak: int):
-        # Calculate global position of landmark
-        pass
+
+    def find_swath_properties(self, swath: List[np.int8]):
+        # Make sure that first element of the swath is the first returned echo,
+        # e.g. port swaths should be flipped
+        
+        peaks, _ = find_peaks(swath) 
+
+        # Remove first peaks as it does not correspond to any landmark
+        peaks = np.delete(peaks, 0)
+
+        prominences, left_bases, right_bases = peak_prominences(swath, peaks)
+        widths, _, _, _ = peak_widths(swath, peaks, 0.5, (prominences, left_bases, right_bases))
+
+        swath_properties = []
+
+        for peak, prominence, width in zip(peaks, prominences, widths):
+            swath_properties.append((peak, prominence, width))  
+
+        return swath_properties
+
+    def extract_landmarks(self, swath: Swath, swath_properties):
+        landmarks = np.zeros((1,len(swath.swath_port) + len(swath.swath_stb)))
+
+        for (peak, width, prominence) in swath_properties:
+            if (2 * width) / prominence < self.landmark_threshold.value:
+                self.shadow_landmarks.append(Landmark(self.get_global_pos(swath, peak), width, prominence))
+                landmarks[peak - floor(width/2):peak + floor(width/2)] = 1
+
+        return landmarks
+
+
+    def invert_swath(self, swath: Swath):
+        inverted_swath = Swath()
+        inverted_swath.altitude = swath.altitude
+        inverted_swath.pose = swath.pose
+        inverted_swath.swath_port = [255 - bin for bin in swath.swath_port]
+        inverted_swath.swath_stb = [255 - bin for bin in swath.swath_stb]
+
+        return inverted_swath
+
+    # Not implemented
+    def get_global_pos(self, swath: Swath, peak: int):
+        return (0, 0, 0)
