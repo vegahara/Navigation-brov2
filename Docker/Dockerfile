@@ -3,7 +3,7 @@ FROM osrf/ros:galactic-desktop
 RUN apt-get update && apt-get  install -y wget python3-pip && \
     python3 -m pip install --upgrade pip
 
-# Install rosbad2 packages
+# Install rosbag2 packages
 RUN apt-get update && apt-get install -y ros-galactic-ros2bag ros-galactic-rosbag2-transport
 
 # Install ncurses lib
@@ -28,6 +28,9 @@ RUN julia /home/requirements.jl
 # Install python requirements
 ADD Docker/requirements.txt /home/requirements.txt
 RUN python3 -m pip install -r /home/requirements.txt
+
+# Install tk to be able to run matplotlib.pyplot
+RUN apt-get -y install python3-tk
 
 # Source ros
 RUN . /opt/ros/galactic/setup.sh
