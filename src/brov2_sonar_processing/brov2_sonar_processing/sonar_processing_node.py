@@ -80,6 +80,9 @@ class SonarProcessingNode(Node):
         self.buffer_unprocessed_swaths = []
         self.buffer_processed_coordinate_array = []
 
+        self.n_sub_sonar = 0
+        self.n_pub_sonar = 0
+
         self.processed_frame_counter = 1
         self.timer = self.create_timer(processing_period.value, self.run_full_pre_processing_pipeline)
 
@@ -102,6 +105,8 @@ class SonarProcessingNode(Node):
         # Append to the buffer of unprocessed swaths and array for plotting
         self.buffer_unprocessed_swaths.append(self.current_swath)
 
+        self.n_sub_sonar += 1
+
 
     def dvl_sub(self, dvl_msg):
         # Altitude values of -1 are invalid
@@ -120,8 +125,10 @@ class SonarProcessingNode(Node):
         msg.header = self.current_state.header
         msg.pose = self.current_state.pose.pose
         msg.altitude = self.current_altitude
-        msg.data_stb = [x.to_bytes(1, 'big') for x in swath.swath_right]
-        msg.data_port = [x.to_bytes(1, 'big') for x in swath.swath_left]
+        msg.data_stb = swath.swath_right
+        msg.data_port = swath.swath_left
+
+        self.n_pub_sonar += 1
 
         self.sonar_puplisher.publish(msg)
 
@@ -235,12 +242,14 @@ class SonarProcessingNode(Node):
 
         swath_structure = self.buffer_unprocessed_swaths[0]
 
-        # Publish data to landmark detector
-        self.sonar_pub(swath_structure)
-
         # Intensity normalization
         swath_structure.swath_right,_ = self.spline.swath_normalization(swath_structure.swath_right)
         swath_structure.swath_left,_    = self.spline.swath_normalization(swath_structure.swath_left)
+
+        # Publish data to landmark detector
+        swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
+        swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
+        self.sonar_pub(swath_structure)
 
         # Blind zone removal
         swath_structure.swath_right = self.blind_zone_removal(swath_structure.swath_right)
@@ -251,6 +260,8 @@ class SonarProcessingNode(Node):
 
         # Pose correction
         processed_coordinate_array = self.pose_correction(swath_structure)
+
+        print('Recived: ', self.n_sub_sonar, ' Sendt: ', self.n_pub_sonar)
 
         # Add element to processed and remove from unprocessed buffer
         self.buffer_processed_coordinate_array.append(processed_coordinate_array)

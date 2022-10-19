@@ -49,18 +49,21 @@ class LandmarkDetector1D(Node):
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('landmark_detector_threshold', 10),
                         ('n_samples', 1000),
-                        ('cubic_spl_smoothing_param', 1e-6)]
+                        ('cubic_spl_smoothing_param', 1e-6),
+                        ('processing_period', 0.0001)]
         )
                       
         (sonar_data_topic_name, 
         self.landmark_threshold, 
         self.n_samples, 
-        self.cubic_spl_smoothing_param) = \
+        self.cubic_spl_smoothing_param,
+        processing_period) = \
         self.get_parameters([
             'sonar_data_topic_name', 
             'landmark_detector_threshold',
             'n_samples',
-            'cubic_spl_smoothing_param'
+            'cubic_spl_smoothing_param',
+            'processing_period'
         ])
                                                                             
         self.sonar_processed_subscription = self.create_subscription(
@@ -72,8 +75,17 @@ class LandmarkDetector1D(Node):
         self.sonar_processed_subscription # prevent unused variable warning
         
         # Landmark detection - initialization
-        self.shadow_landmarks = []  # Containing all detected shadow landmarks 
-        self.echo_landmarks = []    # Containing all detected echo landmarks   
+        self.swath_buffer = []          # Buffer for buffering incoming messages
+        self.shadow_landmarks = []      # Containing all detected shadow landmarks 
+        self.echo_landmarks = []        # Containing all detected echo landmarks 
+        self.swath_array_buffer = []    # Buffer used for plotting results
+        self.echo_buffer = []           # Buffer used for plotting results
+        self.shadow_buffer = []         # Buffer used for plotting results
+        self.n_msg = 0
+
+        self.timer = self.create_timer(
+            processing_period.value, self.find_landmarks
+        )
 
         self.get_logger().info("Landmark detector node initialized.")
 
@@ -84,50 +96,78 @@ class LandmarkDetector1D(Node):
         swath.altitude = sonar_processed_msg.altitude
         swath.pose = sonar_processed_msg.pose
 
-        data_stb = sonar_processed_msg.data_stb
-        swath.swath_stb = [
-            int.from_bytes(byte_val, "big") for byte_val in data_stb
-        ] # Big endian
+        swath.swath_stb = sonar_processed_msg.data_stb
+        swath.swath_port = sonar_processed_msg.data_port
 
-        data_port = sonar_processed_msg.data_port
-        swath.swath_port = [
-            int.from_bytes(byte_val, "big") for byte_val in data_port
-        ] # Big endian
+        self.swath_buffer.append(swath)
 
-        self.find_landmarks(swath)
+    def find_landmarks(self):
+        # Don't process if buffer is empty
+        if len(self.swath_buffer) == 0:
+            return
 
-    def find_landmarks(self, swath: Swath):
+        swath = self.swath_buffer[0]
         
         swath.swath_port = self.swath_smoothing(swath.swath_port)
         swath.swath_stb = self.swath_smoothing(swath.swath_stb)
 
-        # Find all properties of swath. Make sure swath are flipped right way
-        # To find shadows, swath is flipped
-        shadow_properties = []
-        echo_properties = []
-
+        # Find all  shadow properties of swath
+        # To find shadows, swath is inverted
         swath_inverted = self.invert_swath(swath)
-        shadow_properties.extend(self.find_swath_properties(np.flip(swath_inverted.swath_port)))
-        shadow_properties.extend(self.find_swath_properties(swath_inverted.swath_stb))
-        
-        echo_properties.extend(self.find_swath_properties(np.flip(swath.swath_port)))
-        echo_properties.extend(self.find_swath_properties(swath.swath_stb))
 
-        shadow_landmarks = self.extract_landmarks(swath, shadow_properties)
-        echo_landmarks = self.extract_landmarks(swath, echo_properties)
+        # Find port properties and flip result 
+        shadow_prop_port = self.find_swath_properties(swath_inverted.swath_port)
+        
+        shadow_prop_port.reverse()
+        shadow_prop_port = [
+            (len(swath.swath_port) - pk, pr, w) for (pk, pr, w) in shadow_prop_port
+        ]
+        
+        # Find stb properties and move indices to be able to work with complete swaths
+        shadow_prop_stb = self.find_swath_properties(swath_inverted.swath_stb)
+        shadow_prop_stb = [
+            (len(swath.swath_port) + pk, pr, w) for (pk, pr, w) in shadow_prop_stb
+        ]
+
+        shadow_prop = []
+        shadow_prop.extend(shadow_prop_port)
+        shadow_prop.extend(shadow_prop_stb)
+
+        # Find all echo properties
+        # Find port properties and flip result back
+        echo_prop_port = self.find_swath_properties(swath.swath_port)
+        
+        echo_prop_port.reverse()
+        echo_prop_port = [
+            (len(swath.swath_port) - pk, pr, w) for (pk, pr, w) in echo_prop_port
+        ]
+        
+        # Find stb properties and move indices to be able to work with complete swaths
+        echo_prop_stb = self.find_swath_properties(swath.swath_stb)
+        echo_prop_stb = [
+            (len(swath.swath_port) + pk, pr, w) for (pk, pr, w) in echo_prop_stb
+        ]
+
+        echo_prop = []
+        echo_prop.extend(echo_prop_port)
+        echo_prop.extend(echo_prop_stb)
+
+        shadow_landmarks = self.extract_landmarks(swath, shadow_prop)
+        echo_landmarks = self.extract_landmarks(swath, echo_prop)
 
         self.plot_landmarks(swath, echo_landmarks, shadow_landmarks)
 
+        self.swath_buffer.pop(0)
+
         # How to handle landmark detection when we detect both shadows and echoes? Should they be matched up?
 
-
-    def find_swath_properties(self, swath: List[np.int8]):
+    def find_swath_properties(self, swath: Swath):
         # Make sure that first element of the swath is the first returned echo,
         # e.g. port swaths should be flipped
         
         peaks, _ = find_peaks(swath) 
 
-        # Remove first peaks as it does not correspond to any landmark
+        # Remove first peak as it does not correspond to any landmark
         peaks = np.delete(peaks, 0)
 
         prominences, left_bases, right_bases = peak_prominences(swath, peaks)
@@ -141,14 +181,17 @@ class LandmarkDetector1D(Node):
         for peak, prominence, width in zip(peaks, prominences, widths):
             swath_properties.append((peak, prominence, width))  
 
+        # print('N landmarks:', len(swath_properties))
         return swath_properties
+
 
     def extract_landmarks(self, swath: Swath, swath_properties):
         landmarks = [0] * (len(swath.swath_port) + len(swath.swath_stb))
         
         for (peak, width, prominence) in swath_properties:
 
-            if (2 * width) / prominence < self.landmark_threshold.value:
+            # if (2 * width) / prominence < self.landmark_threshold.value:
+            if True:
                 self.shadow_landmarks.append(Landmark(
                     self.get_global_pos(swath, peak), 
                     width, 
@@ -164,8 +207,12 @@ class LandmarkDetector1D(Node):
         inverted_swath = Swath()
         inverted_swath.altitude = swath.altitude
         inverted_swath.pose = swath.pose
-        inverted_swath.swath_port = [255 - bin for bin in swath.swath_port]
-        inverted_swath.swath_stb = [255 - bin for bin in swath.swath_stb]
+        inverted_swath.swath_port = [
+            max(swath.swath_port) - bin for bin in swath.swath_port
+        ]
+        inverted_swath.swath_stb = [
+            max(swath.swath_stb) - bin for bin in swath.swath_stb
+        ]
 
         return inverted_swath
 
@@ -175,9 +222,18 @@ class LandmarkDetector1D(Node):
 
     def plot_landmarks(self, swath: Swath, echo_landmarks, shadow_landmarks):
         
-        swath_array = swath.swath_port + swath.swath_stb
+        swath_array = []
+        swath_array.extend(np.flip(swath.swath_port))
+        swath_array.extend(np.flip(swath.swath_stb))
 
-        print(swath_array)
+        # print(len(swath.swath_port))
+        # print(len(swath.swath_stb))
+
+        # print(len(swath_array))
+        print(len(shadow_landmarks))
+        print((len(echo_landmarks)))
+
+        # print(swath_array)
 
         for i in range(len(swath_array)):
 
@@ -191,15 +247,27 @@ class LandmarkDetector1D(Node):
                 shadow_landmarks[i] = np.nan
             else:
                 shadow_landmarks[i] = shadow_landmarks[i] * swath_array[i]
-                swath_array[i] = np.nan                
+                swath_array[i] = np.nan  
 
-        plt.plot(swath_array, color='b')
-        plt.plot(shadow_landmarks, color='y')
+        self.swath_array_buffer.append(swath_array)
+        self.echo_buffer.append(echo_landmarks)
+        self.shadow_buffer.append(shadow_landmarks)
+        self.n_msg += 1
+        print(self.n_msg)   
+
+        if len(self.swath_array_buffer) > 100:
+            #plt.imshow(self.echo_buffer, cmap = 'binary')
+            plt.imshow(self.swath_array_buffer, cmap = 'YlOrBr')
+            plt.show() 
+            input("Press key to continue")          
+
+        plt.plot(swath_array, color='k')
+        plt.plot(shadow_landmarks, color='r')
         plt.plot(echo_landmarks, color='g')
 
         plt.show()
 
-        input("Press key to continue")
+        
 
     def swath_smoothing(self, swath):
         x = np.linspace(0., self.n_samples.value, self.n_samples.value)

@@ -98,34 +98,67 @@ def populate_odom_msg(odom_msg, df, row):
     return odom_msg, True
 
 def main():
-    # Set up bag
-    bag_path = 'bags/data'
 
-    storage_options, converter_options = get_rosbag_options(bag_path)
+    main_dir_path = '/Documents/project_thesis/Taura_data/'
 
-    writer = rosbag2.SequentialWriter()
-    writer.open(storage_options, converter_options)
+    directory_names = [
+        '092049_camtest1'
+        '094650'
+        '095359_go-lauv-fridtjof'
+        '095520_go-lauv-fridtjof'
+        '095619_sk-lauv-fridtjof'
+        '095734'
+        '101156_tautra1'
+        '110832'
+        '112527_sk-lauv-fridtjof'
+        '112700_tautra1_2'
+        '113217'
+        '113859_tautra1_2'
+        '115342'
+        '115917_dislodge'
+        '120218'
+        '120228_go-lauv-fridtjof'
+        '120305_tautra1_2'
+        '132208'
+        '133401_tautra2'
+        '135028'
+        '140140_tautra2'
+        '145448'
+        '145909_dislodge'
+        '150815_tautra2'
+    ]
 
-    # Set up topics
-    sonar_topic_name = 'sonar_data'
-    dvl_topic_name = 'dvl/velocity_estimate'
-    odom_topic_name = '/CSEI/observer/odom'
+    for dir_name in directory_names:
+        print('Converting data from: ', dir_name)
+        # Set up bag
+        bag_path = 'bags/dir_name'
+        data_path = main_dir_path + '/' + dir_name + '/mra/csv/'
 
-    create_topic(writer, sonar_topic_name, 'brov2_interfaces/msg/Sonar')
-    create_topic(writer, dvl_topic_name, 'brov2_interfaces/msg/DVL')
-    create_topic(writer, odom_topic_name, 'nav_msgs/msg/Odometry')
+        storage_options, converter_options = get_rosbag_options(bag_path)
 
-    # Load data
-    df_sonar = pd.read_csv('bags/SonarData.csv')
-    df_dvl = pd.read_csv('bags/EstimatedState.csv') 
-    df_odom = pd.read_csv('bags/EstimatedState.csv')
+        writer = rosbag2.SequentialWriter()
+        writer.open(storage_options, converter_options)
 
-    convert_data(writer,
-                [df_dvl, df_odom, df_sonar],  
-                [dvl_topic_name, odom_topic_name, sonar_topic_name], 
-                [DVL, Odometry, Sonar], 
-                [populate_dvl_msg, populate_odom_msg, populate_sonar_msg]
-    )
+        # Set up topics
+        sonar_topic_name = 'sonar_data'
+        dvl_topic_name = 'dvl/velocity_estimate'
+        odom_topic_name = '/CSEI/observer/odom'
+
+        create_topic(writer, sonar_topic_name, 'brov2_interfaces/msg/Sonar')
+        create_topic(writer, dvl_topic_name, 'brov2_interfaces/msg/DVL')
+        create_topic(writer, odom_topic_name, 'nav_msgs/msg/Odometry')
+
+        # Load data
+        df_sonar = pd.read_csv(data_path + 'SonarData.csv')
+        df_dvl = pd.read_csv(data_path + 'EstimatedState.csv') 
+        df_odom = pd.read_csv(data_path + 'EstimatedState.csv')
+
+        convert_data(writer,
+                    [df_dvl, df_odom, df_sonar],  
+                    [dvl_topic_name, odom_topic_name, sonar_topic_name], 
+                    [DVL, Odometry, Sonar], 
+                    [populate_dvl_msg, populate_odom_msg, populate_sonar_msg]
+        )
 
     return 0
 
