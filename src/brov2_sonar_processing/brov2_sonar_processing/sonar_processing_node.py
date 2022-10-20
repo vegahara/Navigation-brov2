@@ -18,7 +18,7 @@ from brov2_sonar_processing import plot_utils as pu
 
 from julia.api import Julia
 jl = Julia(compiled_modules=False)
-jl.eval('import Pkg; Pkg.activate("src/brov2_sonar_processing/brov2_sonar_processing/KnnAlgorithms"); Pkg.update()')
+jl.eval('import Pkg; Pkg.activate("src/brov2_sonar_processing/brov2_sonar_processing/KnnAlgorithms")') #; Pkg.update()')
 jl.eval('import KnnAlgorithms')
 knn = jl.eval('KnnAlgorithms.KnnAlgorithm.knn')
 
@@ -36,7 +36,7 @@ class SonarProcessingNode(Node):
             ('scan_lines_per_stored_frame', 100),
             ('processing_period', 0.0001),
             ('number_of_samples_sonar', 1000),
-            ('range_sonar', 30)
+            ('range_sonar', 75)
         ])
             
         (sonar_data_topic_name, sonar_processed_topic_name, 
@@ -137,12 +137,12 @@ class SonarProcessingNode(Node):
         r_FBR = self.current_altitude / np.sin(self.side_scan_data.theta + self.side_scan_data.alpha/2)
         index_FBR = int(np.floor_divide(r_FBR, self.side_scan_data.res))
         
-        # Whole swath is blindzone
+        # Whole swath is blindzone and we don't have any first bottom return
         if(index_FBR > len(swath)):
-            index_FBR = len(swath)
+            return swath, False
         
         swath[:index_FBR] = [np.nan] * index_FBR
-        return swath
+        return swath, True
 
     def slant_range_correction(self, swath_structure):
         # Variation of Burguera et al. 2016, Algorithm 1
@@ -235,25 +235,30 @@ class SonarProcessingNode(Node):
             return
         
         # Interpolate and construct frame if sufficient amount of swaths has arrived
-        # buffer_size = len(self.buffer_processed_coordinate_array)
-        # if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
-        #     _,_,_,_,_,_,_,_,_ = self.construct_frame()
-        #     self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
+        buffer_size = len(self.buffer_processed_coordinate_array)
+        if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
+            _,_,_,_,_,_,_,_,_ = self.construct_frame()
+            self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
 
         swath_structure = self.buffer_unprocessed_swaths[0]
 
         # Intensity normalization
         swath_structure.swath_right,_ = self.spline.swath_normalization(swath_structure.swath_right)
-        swath_structure.swath_left,_    = self.spline.swath_normalization(swath_structure.swath_left)
+        swath_structure.swath_left,_ = self.spline.swath_normalization(swath_structure.swath_left)
+
+        # Blind zone removal
+        swath_structure.swath_right, rigth_FBR = self.blind_zone_removal(swath_structure.swath_right)
+        swath_structure.swath_left, left_FBR = self.blind_zone_removal(swath_structure.swath_left)
+
+        # No first bottom return, no need for further processing
+        if (not rigth_FBR) and (not left_FBR):
+            self.buffer_unprocessed_swaths.pop(0)
+            return
 
         # Publish data to landmark detector
         swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
         swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
         self.sonar_pub(swath_structure)
-
-        # Blind zone removal
-        swath_structure.swath_right = self.blind_zone_removal(swath_structure.swath_right)
-        swath_structure.swath_left  = self.blind_zone_removal(swath_structure.swath_left)
 
         # Slant range correction
         swath_structure = self.slant_range_correction(swath_structure)

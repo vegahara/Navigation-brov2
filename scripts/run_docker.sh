@@ -12,7 +12,7 @@ docker run  --rm -it \
             --env="QT_X11_NO_MITSHM=1" \
             --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
             navigation-brov2_im:latest \
-            bash -c "cd /home/repo/Navigation-brov2 && colcon build --symlink-install && bash -l"
+            bash -c "cd /home/repo/Navigation-brov2 && julia scripts/update_pkg.jl && colcon build --symlink-install && bash -l"
             # --user $(id -u):$(id -g) \
 
             

@@ -1,0 +1,31 @@
+rosbag2_bagfile_information:
+  version: 4
+  storage_identifier: sqlite3
+  relative_file_paths:
+    - bag_0.db3
+  duration:
+    nanoseconds: 1593500000000
+  starting_time:
+    nanoseconds_since_epoch: 1560699619858000040
+  message_count: 71215
+  topics_with_message_count:
+    - topic_metadata:
+        name: /CSEI/observer/odom
+        type: nav_msgs/msg/Odometry
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 31871
+    - topic_metadata:
+        name: dvl/velocity_estimate
+        type: brov2_interfaces/msg/DVL
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 31871
+    - topic_metadata:
+        name: sonar_data
+        type: brov2_interfaces/msg/Sonar
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 7473
+  compression_format: ""
+  compression_mode: ""
