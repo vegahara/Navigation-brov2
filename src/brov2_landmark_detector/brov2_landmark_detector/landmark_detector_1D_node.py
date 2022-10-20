@@ -152,6 +152,8 @@ class LandmarkDetector1D(Node):
         echo_prop.extend(echo_prop_port)
         echo_prop.extend(echo_prop_stb)
 
+        # print(echo_prop)
+
         shadow_landmarks = self.extract_landmarks(swath, shadow_prop)
         echo_landmarks = self.extract_landmarks(swath, echo_prop)
 
@@ -188,10 +190,9 @@ class LandmarkDetector1D(Node):
     def extract_landmarks(self, swath: Swath, swath_properties):
         landmarks = [0] * (len(swath.swath_port) + len(swath.swath_stb))
         
-        for (peak, width, prominence) in swath_properties:
+        for (peak, prominence, width) in swath_properties:
 
-            # if (2 * width) / prominence < self.landmark_threshold.value:
-            if True:
+            if (2 * width) / prominence < self.landmark_threshold.value:
                 self.shadow_landmarks.append(Landmark(
                     self.get_global_pos(swath, peak), 
                     width, 
@@ -256,16 +257,17 @@ class LandmarkDetector1D(Node):
         print(self.n_msg)   
 
         if len(self.swath_array_buffer) > 100:
-            #plt.imshow(self.echo_buffer, cmap = 'binary')
+            print(self.echo_buffer)
+            # plt.imshow(self.echo_buffer)
             plt.imshow(self.swath_array_buffer, cmap = 'YlOrBr')
             plt.show() 
             input("Press key to continue")          
 
-        plt.plot(swath_array, color='k')
-        plt.plot(shadow_landmarks, color='r')
-        plt.plot(echo_landmarks, color='g')
+        # plt.plot(swath_array, color='k')
+        # plt.plot(shadow_landmarks, color='r')
+        # plt.plot(echo_landmarks, color='g')
 
-        plt.show()
+        # plt.show()
 
         
 
