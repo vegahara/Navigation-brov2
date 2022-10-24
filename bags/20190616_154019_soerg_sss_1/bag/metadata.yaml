@@ -4,23 +4,23 @@ rosbag2_bagfile_information:
   relative_file_paths:
     - bag_0.db3
   duration:
-    nanoseconds: 1593500000000
+    nanoseconds: 1586500000000
   starting_time:
-    nanoseconds_since_epoch: 1560699619858000040
-  message_count: 71215
+    nanoseconds_since_epoch: 1560699626858000040
+  message_count: 70935
   topics_with_message_count:
     - topic_metadata:
         name: /CSEI/observer/odom
         type: nav_msgs/msg/Odometry
         serialization_format: cdr
         offered_qos_profiles: ""
-      message_count: 31871
+      message_count: 31731
     - topic_metadata:
         name: dvl/velocity_estimate
         type: brov2_interfaces/msg/DVL
         serialization_format: cdr
         offered_qos_profiles: ""
-      message_count: 31871
+      message_count: 31731
     - topic_metadata:
         name: sonar_data
         type: brov2_interfaces/msg/Sonar

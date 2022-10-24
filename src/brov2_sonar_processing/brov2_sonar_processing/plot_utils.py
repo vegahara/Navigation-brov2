@@ -72,19 +72,19 @@ class plot_utils:
     #    fig.canvas.draw()
 
     def plot_raw_image(self, fig, axis, u, v, intensity_values):
-        axis.scatter(v,u,c=intensity_values,s=0.01,cmap='gray')
+        axis.scatter(v,u,c=intensity_values,s=0.01,cmap='YlOrBr')
         axis.set(xlabel='Across track', ylabel='Along track', title='Raw Swath Frame')
         plt.pause(10e-5)
         fig.canvas.draw()
 
     def plot_global_batch_image(self, fig, axis, processed_swath_array):
-        axis.imshow(processed_swath_array,cmap='gray', interpolation=None)
+        axis.imshow(processed_swath_array,cmap='YlOrBr', vmax = 2.0)
         axis.set(xlabel='Across track', ylabel='Along track', title='Processed Swath Frame')
         plt.pause(10e-5)
         fig.canvas.draw()
 
     def plot_global_image(self, fig, axis, global_processed_swath_array):
-        axis.imshow(global_processed_swath_array,cmap='gray', interpolation=None)
+        axis.imshow(global_processed_swath_array,cmap='YlOrBr', interpolation=None)
         axis.set(xlabel='Across track', ylabel='Along track', title='Global Processed Frame')
         plt.pause(10e-5)
         fig.canvas.draw()

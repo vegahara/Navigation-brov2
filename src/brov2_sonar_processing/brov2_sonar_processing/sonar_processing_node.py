@@ -10,6 +10,7 @@ from nav_msgs.msg import Odometry
 import math
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from scipy import interpolate
 
 from brov2_sonar_processing import side_scan_data as ssd
@@ -33,7 +34,7 @@ class SonarProcessingNode(Node):
             ('sonar_processed_topic_name', 'sonar_processed'),
             ('dvl_vel_topic_name', 'dvl/velocity_estimate'),
             ('qekf_state_estimate_topic_name', '/CSEI/observer/odom'),
-            ('scan_lines_per_stored_frame', 100),
+            ('scan_lines_per_stored_frame', 200),
             ('processing_period', 0.0001),
             ('number_of_samples_sonar', 1000),
             ('range_sonar', 75)
@@ -79,12 +80,15 @@ class SonarProcessingNode(Node):
         self.altitude_valid = False
         self.buffer_unprocessed_swaths = []
         self.buffer_processed_coordinate_array = []
+        self.processed_swath_array = []
 
         self.n_sub_sonar = 0
         self.n_pub_sonar = 0
 
         self.processed_frame_counter = 1
         self.timer = self.create_timer(processing_period.value, self.run_full_pre_processing_pipeline)
+
+        self.plotter = pu.plot_utils()
 
         self.get_logger().info("Sonar processing node initialized.")
 
@@ -225,7 +229,7 @@ class SonarProcessingNode(Node):
 
         # Or Knn method as described in hogstad2022sidescansonar
         knn_intensity_mean, knn_intensity_variance, knn_filtered_image = knn(self.side_scan_data.res, u_temp, v, intensity_values)
-        self.store_processed_frames(u, v, intensity_values, knn_intensity_mean, knn_filtered_image)
+        # self.store_processed_frames(u, v, intensity_values, knn_intensity_mean, knn_filtered_image)
     
         return u, v, intensity_values, linear_frame, int(min(u_temp)), int(min(v)), knn_intensity_mean, knn_intensity_variance, knn_filtered_image
 
@@ -237,7 +241,14 @@ class SonarProcessingNode(Node):
         # Interpolate and construct frame if sufficient amount of swaths has arrived
         buffer_size = len(self.buffer_processed_coordinate_array)
         if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
-            _,_,_,_,_,_,_,_,_ = self.construct_frame()
+            # u, v, intensity_val, linear_frame, min_u, min_v, \
+            #     knn_intensity_mean, knn_intensity_variance, knn_filtered_image = \
+            #     self.construct_frame()
+            
+            fig = plt.figure() 
+            axes=fig.add_axes([0,0,1,1])
+
+            self.plotter.plot_global_batch_image(fig, axes, self.processed_swath_array)
             self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
 
         swath_structure = self.buffer_unprocessed_swaths[0]
@@ -259,6 +270,12 @@ class SonarProcessingNode(Node):
         swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
         swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
         self.sonar_pub(swath_structure)
+
+        # Save for plotting
+        swath_array = []
+        swath_array.extend(np.flip(swath_structure.swath_left))
+        swath_array.extend(np.flip(swath_structure.swath_right))
+        self.processed_swath_array.insert(0,swath_array)
 
         # Slant range correction
         swath_structure = self.slant_range_correction(swath_structure)
