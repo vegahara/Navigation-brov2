@@ -66,7 +66,8 @@ def populate_sonar_msg(sonar_msg, df, row):
     sonar_data = []
     
     for i in range(0, len(data), 2):
-        sonar_data.append(int(data[i:i+2], base=16))
+        # Data is big endian and has to be interpred in reverse
+        sonar_data.append(int(data[i:i+2][::-1], base=16)) 
 
     sonar_msg.data_zero = [int_val.to_bytes(1, 'big') for int_val in sonar_data[:len(sonar_data)//2]]
     sonar_msg.data_one = [int_val.to_bytes(1, 'big') for int_val in sonar_data[len(sonar_data)//2:-1]]

@@ -37,7 +37,7 @@ class SonarProcessingNode(Node):
             ('scan_lines_per_stored_frame', 500),
             ('processing_period', 0.0001),
             ('number_of_samples_sonar', 1000),
-            ('range_sonar', 75)
+            ('range_sonar', 90)
         ])
             
         (sonar_data_topic_name, sonar_processed_topic_name, 
@@ -71,7 +71,7 @@ class SonarProcessingNode(Node):
             )
 
         # Sonar data processing - initialization
-        self.side_scan_data = ssd.side_scan_data(number_of_samples_sonar.value, range_sonar.value)
+        self.side_scan_data = ssd.side_scan_data(number_of_samples_sonar.value, range_sonar.value, sensor_angle_placement=45*math.pi/180)
         self.spline = csr.cubic_spline_regression(nS = number_of_samples_sonar.value)
         self.current_swath = ssd.swath_structure()
         self.current_altitude = 0
@@ -81,6 +81,8 @@ class SonarProcessingNode(Node):
         self.buffer_unprocessed_swaths = []
         self.buffer_processed_coordinate_array = []
         self.processed_swath_array = []
+        self.fig = plt.figure() 
+        self.axes=self.fig.add_axes([0.05,0,0.9,1])
 
         self.n_sub_sonar = 0
         self.n_pub_sonar = 0
@@ -98,12 +100,12 @@ class SonarProcessingNode(Node):
         if not self.state_initialized or not self.altitude_valid:
             return
 
-        # Right transducer data handling
-        transducer_raw_right = sonar_msg.data_zero
-        self.current_swath.swath_right = [int.from_bytes(byte_val, "big") for byte_val in transducer_raw_right] # Big endian
         # Left transducer data handling
-        transducer_raw_left = sonar_msg.data_one
+        transducer_raw_left = sonar_msg.data_zero
         self.current_swath.swath_left = [int.from_bytes(byte_val, "big") for byte_val in transducer_raw_left]
+        # Right transducer data handling
+        transducer_raw_right = sonar_msg.data_one
+        self.current_swath.swath_right = [int.from_bytes(byte_val, "big") for byte_val in transducer_raw_right] # Big endian
         # Adding related state and altitude of platform for processing purpose
         self.current_swath.state, self.current_swath.altitude = self.current_state, self.current_altitude
         # Append to the buffer of unprocessed swaths and array for plotting
@@ -244,18 +246,21 @@ class SonarProcessingNode(Node):
             # u, v, intensity_val, linear_frame, min_u, min_v, \
             #     knn_intensity_mean, knn_intensity_variance, knn_filtered_image = \
             #     self.construct_frame()
-            
-            fig = plt.figure() 
-            axes=fig.add_axes([0,0,1,1])
 
-            self.plotter.plot_global_batch_image(fig, axes, self.processed_swath_array)
+            if len(self.processed_swath_array) > 2500:
+                self.processed_swath_array = self.processed_swath_array[:2500]
+            
+            self.plotter.plot_global_batch_image(self.fig, self.axes, self.processed_swath_array)
+            # input("Press key to continue")
+            # self.plotter.plot_global_batch_image(self.fig, self.axes, self.processed_swath_array)
+            # input("Press key to continue")
             self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
 
         swath_structure = self.buffer_unprocessed_swaths[0]
 
         # left_copy = swath_structure.swath_left.copy()
-        # right_copy = swath_structure.swath_right.copy()
-
+        # right_copy = swath_structure.swath_right.copy()        
+ 
         # Intensity normalization
         swath_structure.swath_right, spl_right = self.spline.swath_normalization(swath_structure.swath_right)
         swath_structure.swath_left, spl_left = self.spline.swath_normalization(swath_structure.swath_left)
@@ -265,12 +270,6 @@ class SonarProcessingNode(Node):
         
         # input("Press key to continue")
 
-        # Save for plotting
-        swath_array = []
-        swath_array.extend(np.flip(swath_structure.swath_left))
-        swath_array.extend(np.flip(swath_structure.swath_right))
-        self.processed_swath_array.insert(0,swath_array)
-
         # Publish data to landmark detector
         swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
         swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
@@ -278,7 +277,8 @@ class SonarProcessingNode(Node):
 
         # Blind zone removal
         swath_structure.swath_right, rigth_FBR = self.blind_zone_removal(swath_structure.swath_right)
-        swath_structure.swath_left, left_FBR = self.blind_zone_removal(swath_structure.swath_left)
+        temp_swath, left_FBR = self.blind_zone_removal(np.flip(swath_structure.swath_left))
+        swath_structure.swath_left = np.flip(temp_swath)
 
         # No first bottom return, no need for further processing
         if (not rigth_FBR) and (not left_FBR):
@@ -286,7 +286,16 @@ class SonarProcessingNode(Node):
             return
 
         # Slant range correction
+        # Flipping left swath back and forth to make correction correct
+        swath_structure.swath_left = np.flip(swath_structure.swath_left)
         swath_structure = self.slant_range_correction(swath_structure)
+        swath_structure.swath_left = np.flip(swath_structure.swath_left)
+
+        # Save for plotting
+        swath_array = []
+        swath_array.extend(swath_structure.swath_left)
+        swath_array.extend(swath_structure.swath_right)
+        self.processed_swath_array.insert(0,swath_array)
 
         # Pose correction
         processed_coordinate_array = self.pose_correction(swath_structure)
