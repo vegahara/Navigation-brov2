@@ -78,7 +78,7 @@ class plot_utils:
         fig.canvas.draw()
 
     def plot_global_batch_image(self, fig, axis, processed_swath_array):
-        axis.imshow(processed_swath_array,cmap='YlOrBr', vmax = 2.0)
+        axis.imshow(processed_swath_array,cmap='copper', vmin = 0.4)
         axis.set(xlabel='Across track', ylabel='Along track', title='Processed Swath Frame')
         plt.pause(10e-5)
         fig.canvas.draw()

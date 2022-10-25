@@ -163,7 +163,7 @@ class LandmarkDetector1D(Node):
 
         # How to handle landmark detection when we detect both shadows and echoes? Should they be matched up?
 
-    def find_swath_properties(self, swath: Swath):
+    def find_swath_properties(self, swath):
         # Make sure that first element of the swath is the first returned echo,
         # e.g. port swaths should be flipped
         
@@ -231,8 +231,8 @@ class LandmarkDetector1D(Node):
         # print(len(swath.swath_stb))
 
         # print(len(swath_array))
-        print(len(shadow_landmarks))
-        print((len(echo_landmarks)))
+        # print(len(shadow_landmarks))
+        # print((len(echo_landmarks)))
 
         # print(swath_array)
 
@@ -256,7 +256,7 @@ class LandmarkDetector1D(Node):
         self.n_msg += 1
         print(self.n_msg)   
 
-        if len(self.swath_array_buffer) > 100:
+        if len(self.swath_array_buffer) > 500:
             print(self.echo_buffer)
             # plt.imshow(self.echo_buffer)
             plt.imshow(self.swath_array_buffer, cmap = 'YlOrBr')
@@ -272,7 +272,7 @@ class LandmarkDetector1D(Node):
         
 
     def swath_smoothing(self, swath):
-        x = np.linspace(0., self.n_samples.value, self.n_samples.value)
+        x = np.linspace(0., self.n_samples.value - 1, self.n_samples.value)
         spl = csaps(x, swath, x, smooth=self.cubic_spl_smoothing_param.value)
-
+       
         return spl            

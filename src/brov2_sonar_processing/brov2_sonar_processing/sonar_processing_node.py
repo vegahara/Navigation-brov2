@@ -34,7 +34,7 @@ class SonarProcessingNode(Node):
             ('sonar_processed_topic_name', 'sonar_processed'),
             ('dvl_vel_topic_name', 'dvl/velocity_estimate'),
             ('qekf_state_estimate_topic_name', '/CSEI/observer/odom'),
-            ('scan_lines_per_stored_frame', 200),
+            ('scan_lines_per_stored_frame', 500),
             ('processing_period', 0.0001),
             ('number_of_samples_sonar', 1000),
             ('range_sonar', 75)
@@ -253,9 +253,28 @@ class SonarProcessingNode(Node):
 
         swath_structure = self.buffer_unprocessed_swaths[0]
 
+        # left_copy = swath_structure.swath_left.copy()
+        # right_copy = swath_structure.swath_right.copy()
+
         # Intensity normalization
-        swath_structure.swath_right,_ = self.spline.swath_normalization(swath_structure.swath_right)
-        swath_structure.swath_left,_ = self.spline.swath_normalization(swath_structure.swath_left)
+        swath_structure.swath_right, spl_right = self.spline.swath_normalization(swath_structure.swath_right)
+        swath_structure.swath_left, spl_left = self.spline.swath_normalization(swath_structure.swath_left)
+
+        # self.plotter.plot_swath(0, swath_structure.altitude, self.side_scan_data, 
+        #     right_copy, spl_right, left_copy, spl_left)
+        
+        # input("Press key to continue")
+
+        # Save for plotting
+        swath_array = []
+        swath_array.extend(np.flip(swath_structure.swath_left))
+        swath_array.extend(np.flip(swath_structure.swath_right))
+        self.processed_swath_array.insert(0,swath_array)
+
+        # Publish data to landmark detector
+        swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
+        swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
+        self.sonar_pub(swath_structure)
 
         # Blind zone removal
         swath_structure.swath_right, rigth_FBR = self.blind_zone_removal(swath_structure.swath_right)
@@ -265,17 +284,6 @@ class SonarProcessingNode(Node):
         if (not rigth_FBR) and (not left_FBR):
             self.buffer_unprocessed_swaths.pop(0)
             return
-
-        # Publish data to landmark detector
-        swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
-        swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
-        self.sonar_pub(swath_structure)
-
-        # Save for plotting
-        swath_array = []
-        swath_array.extend(np.flip(swath_structure.swath_left))
-        swath_array.extend(np.flip(swath_structure.swath_right))
-        self.processed_swath_array.insert(0,swath_array)
 
         # Slant range correction
         swath_structure = self.slant_range_correction(swath_structure)
