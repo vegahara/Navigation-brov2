@@ -85,10 +85,9 @@ class SonarProcessingNode(Node):
         self.plot_figures = False
         self.store_frames = False
 
-        self.fig = plt.figure() 
-        self.axes=self.fig.add_axes([0.05,0,0.9,1])
-
-
+        if self.plot_figures: 
+            self.fig = plt.figure() 
+            self.axes=self.fig.add_axes([0.05,0,0.9,1])
 
         self.n_sub_sonar = 0
         self.n_pub_sonar = 0
@@ -251,9 +250,9 @@ class SonarProcessingNode(Node):
         # Interpolate and construct frame if sufficient amount of swaths has arrived
         buffer_size = len(self.buffer_processed_coordinate_array)
         if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
-            u, v, intensity_val, linear_frame, min_u, min_v, \
-                knn_intensity_mean, knn_intensity_variance, knn_filtered_image = \
-                self.construct_frame()
+            # u, v, intensity_val, linear_frame, min_u, min_v, \
+            #     knn_intensity_mean, knn_intensity_variance, knn_filtered_image = \
+            #     self.construct_frame()
 
             if len(self.processed_swath_array) > 2500:
                 self.processed_swath_array = self.processed_swath_array[:2500]
