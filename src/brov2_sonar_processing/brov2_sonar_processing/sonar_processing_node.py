@@ -81,8 +81,14 @@ class SonarProcessingNode(Node):
         self.buffer_unprocessed_swaths = []
         self.buffer_processed_coordinate_array = []
         self.processed_swath_array = []
+
+        self.plot_figures = False
+        self.store_frames = False
+
         self.fig = plt.figure() 
         self.axes=self.fig.add_axes([0.05,0,0.9,1])
+
+
 
         self.n_sub_sonar = 0
         self.n_pub_sonar = 0
@@ -231,7 +237,9 @@ class SonarProcessingNode(Node):
 
         # Or Knn method as described in hogstad2022sidescansonar
         knn_intensity_mean, knn_intensity_variance, knn_filtered_image = knn(self.side_scan_data.res, u_temp, v, intensity_values)
-        # self.store_processed_frames(u, v, intensity_values, knn_intensity_mean, knn_filtered_image)
+        
+        if self.store_frames :
+            self.store_processed_frames(u, v, intensity_values, knn_intensity_mean, knn_filtered_image)
     
         return u, v, intensity_values, linear_frame, int(min(u_temp)), int(min(v)), knn_intensity_mean, knn_intensity_variance, knn_filtered_image
 
@@ -243,32 +251,26 @@ class SonarProcessingNode(Node):
         # Interpolate and construct frame if sufficient amount of swaths has arrived
         buffer_size = len(self.buffer_processed_coordinate_array)
         if buffer_size%self.scan_lines_per_stored_frame.value == 0 and buffer_size != 0:
-            # u, v, intensity_val, linear_frame, min_u, min_v, \
-            #     knn_intensity_mean, knn_intensity_variance, knn_filtered_image = \
-            #     self.construct_frame()
+            u, v, intensity_val, linear_frame, min_u, min_v, \
+                knn_intensity_mean, knn_intensity_variance, knn_filtered_image = \
+                self.construct_frame()
 
             if len(self.processed_swath_array) > 2500:
                 self.processed_swath_array = self.processed_swath_array[:2500]
             
-            self.plotter.plot_global_batch_image(self.fig, self.axes, self.processed_swath_array)
-            # input("Press key to continue")
-            # self.plotter.plot_global_batch_image(self.fig, self.axes, self.processed_swath_array)
-            # input("Press key to continue")
+            if self.plot_figures:
+                self.plotter.plot_global_batch_image(self.fig, self.axes, self.processed_swath_array)
+                input("Press key to continue")
+                self.plotter.plot_global_batch_image(self.fig, self.axes, self.processed_swath_array)
+                input("Press key to continue")
+
             self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
 
-        swath_structure = self.buffer_unprocessed_swaths[0]
-
-        # left_copy = swath_structure.swath_left.copy()
-        # right_copy = swath_structure.swath_right.copy()        
+        swath_structure = self.buffer_unprocessed_swaths[0]   
  
         # Intensity normalization
         swath_structure.swath_right, spl_right = self.spline.swath_normalization(swath_structure.swath_right)
         swath_structure.swath_left, spl_left = self.spline.swath_normalization(swath_structure.swath_left)
-
-        # self.plotter.plot_swath(0, swath_structure.altitude, self.side_scan_data, 
-        #     right_copy, spl_right, left_copy, spl_left)
-        
-        # input("Press key to continue")
 
         # Publish data to landmark detector
         swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
@@ -292,10 +294,11 @@ class SonarProcessingNode(Node):
         swath_structure.swath_left = np.flip(swath_structure.swath_left)
 
         # Save for plotting
-        swath_array = []
-        swath_array.extend(swath_structure.swath_left)
-        swath_array.extend(swath_structure.swath_right)
-        self.processed_swath_array.insert(0,swath_array)
+        if self.plot_figures:   
+            swath_array = []
+            swath_array.extend(swath_structure.swath_left)
+            swath_array.extend(swath_structure.swath_right)
+            self.processed_swath_array.insert(0,swath_array)
 
         # Pose correction
         processed_coordinate_array = self.pose_correction(swath_structure)
