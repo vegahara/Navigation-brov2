@@ -32,6 +32,9 @@ RUN python3 -m pip install -r /home/requirements.txt
 # Install tk to be able to run matplotlib.pyplot
 RUN apt-get -y install python3-tk
 
+# Install tmux
+RUN apt-get -y install tmux
+
 # Source ros
 RUN . /opt/ros/galactic/setup.sh
 

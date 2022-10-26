@@ -1,6 +1,6 @@
 #!/bin/bash
 
-./Documents/code/Navigation-brov2/scripts/enable_GUI_docker.sh
+./scripts/enable_GUI_docker.sh
 
 docker run  --rm -it \
             --name navigation-brov2 \
@@ -12,8 +12,12 @@ docker run  --rm -it \
             --env="QT_X11_NO_MITSHM=1" \
             --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
             navigation-brov2_im:latest \
-            bash -c "cd /home/repo/Navigation-brov2 && julia scripts/update_pkg.jl && colcon build --symlink-install && bash -l"
-            # --user $(id -u):$(id -g) \
+            bash -c "cd /home/repo/Navigation-brov2 && \
+                julia scripts/update_pkg.jl && \
+                colcon build --symlink-install && \
+                ./scripts/start_tmux.sh && \
+                bash -l"
+
 
             
              
