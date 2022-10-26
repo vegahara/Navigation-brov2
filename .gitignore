@@ -17,3 +17,6 @@ Manifest.toml
 
 # vs code
 .vscode
+
+# Various folders
+processed_frames/
