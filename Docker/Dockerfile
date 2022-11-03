@@ -29,6 +29,10 @@ RUN julia /home/requirements.jl
 ADD Docker/requirements.txt /home/requirements.txt
 RUN python3 -m pip install -r /home/requirements.txt
 
+# Setup jupyter-ros2
+RUN jupyter nbextension enable --py --sys-prefix widgetsnbextension && \
+    jupyter nbextension enable --py --sys-prefix jupyros
+
 # Install tk to be able to run matplotlib.pyplot
 RUN apt-get -y install python3-tk
 

@@ -1,3 +1,6 @@
 [submodule "externals/json"]
 	path = externals/json
 	url = https://github.com/nlohmann/json.git
+[submodule "externals/jupyter-ros2"]
+	path = externals/jupyter-ros2
+	url = https://github.com/zmk5/jupyter-ros2.git
