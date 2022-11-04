@@ -46,7 +46,7 @@ class LandmarkDetector1D(Node):
 
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
-                        ('landmark_detector_threshold', 200),
+                        ('landmark_detector_threshold', 220),
                         ('cubic_spl_smoothing_param', 1e-2),
                         ('processing_period', 0.0001),
                         ('n_samples', 1000),
@@ -126,10 +126,6 @@ class LandmarkDetector1D(Node):
         swath.swath_port = self.swath_smoothing(swath.swath_port)
         swath.swath_stb = self.swath_smoothing(swath.swath_stb)
 
-        # if self.plot_figures:
-        #     self.plot_swath(0, raw_swath, swath)
-        #     input('Press key to continue')
-
         # Find all  shadow properties of swath
         # To find shadows, swath is inverted
         swath_inverted = self.invert_swath(swath)
@@ -176,6 +172,18 @@ class LandmarkDetector1D(Node):
         shadow_landmarks = self.extract_landmarks(swath, shadow_prop)
         echo_landmarks = self.extract_landmarks(swath, echo_prop)
 
+        # Not real landmarks if over x % of the swath is "landmark"
+        n_bins = len(swath.swath_port) + len(swath.swath_stb)
+        n_landmark_bins = 0
+        for i in range(n_bins):
+            if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
+                n_landmark_bins += 1
+        
+        if (n_landmark_bins / len(shadow_landmarks)) > 0.25:
+            shadow_landmarks = [0] * n_bins
+            echo_landmarks = [0] * n_bins
+
+
         if self.plot_figures:
             self.plot_landmarks(swath, echo_landmarks, shadow_landmarks)
 
@@ -190,7 +198,7 @@ class LandmarkDetector1D(Node):
         peaks, _ = find_peaks(swath) 
 
         # Remove first peak as it does not correspond to any landmark
-        peaks = np.delete(peaks, 0)
+        # peaks = np.delete(peaks, 0)
 
         prominences, left_bases, right_bases = peak_prominences(swath, peaks)
 
@@ -230,11 +238,14 @@ class LandmarkDetector1D(Node):
         inverted_swath = Swath()
         inverted_swath.altitude = swath.altitude
         inverted_swath.pose = swath.pose
+
+        max_intensity = max(max(swath.swath_port), max(swath.swath_stb))
+        min_intensity = min(min(swath.swath_port), min(swath.swath_stb))
         inverted_swath.swath_port = [
-            max(swath.swath_port) - bin for bin in swath.swath_port
+            (max_intensity - min_intensity) - bin for bin in swath.swath_port
         ]
         inverted_swath.swath_stb = [
-            max(swath.swath_stb) - bin for bin in swath.swath_stb
+            (max_intensity - min_intensity) - bin for bin in swath.swath_stb
         ]
 
         return inverted_swath
@@ -271,19 +282,22 @@ class LandmarkDetector1D(Node):
         self.echo_buffer.append(echo_landmarks)
         self.shadow_buffer.append(shadow_landmarks)
         self.n_msg += 1
+        print(self.n_msg)
           
 
-        # if len(self.swath_array_buffer) > 500:
+        if len(self.swath_array_buffer) > 1000:
                 
-        #     self.axes.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
-        #     self.axes.set(
-        #         xlabel='Across track', 
-        #         ylabel='Along track', 
-        #         title='Detected landmarks'
-        #     )
-        #     plt.pause(10e-5)
-        #     self.fig.canvas.draw()
-        #     input("Press key to continue")
+            self.axes.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
+            self.axes.imshow(self.shadow_buffer, cmap='gist_gray', vmax = 1)
+            self.axes.imshow(self.echo_buffer, cmap='gist_yarg', vmax = 1)
+            self.axes.set(
+                xlabel='Across track', 
+                ylabel='Along track', 
+                title='Detected landmarks'
+            )
+            plt.pause(10e-5)
+            self.fig.canvas.draw()
+            input("Press key to continue")
           
 
     def plot_swath(self, ping, raw_swath: Swath, smoothed_swath: Swath):
