@@ -5,7 +5,6 @@ from math import pi, floor
 from typing import List
 from csaps import csaps
 
-
 from rclpy.node import Node
 
 from brov2_interfaces.msg import SonarProcessed
@@ -208,7 +207,8 @@ class LandmarkDetector1D(Node):
 
 
     def extract_landmarks(self, swath: Swath, swath_properties):
-        landmarks = [0] * (len(swath.swath_port) + len(swath.swath_stb))
+        n_bins = len(swath.swath_port) + len(swath.swath_stb)
+        landmarks = [0] * n_bins
         
         for (peak, prominence, width) in swath_properties:
 
@@ -218,8 +218,10 @@ class LandmarkDetector1D(Node):
                     width, 
                     prominence
                 ))
-                landmarks[peak - floor(width/2):peak + floor(width/2)] = \
-                    [1] * floor(width)
+
+                lower_index = max(peak - floor(width/2), 0)
+                higher_index = min(peak + floor(width/2), n_bins)
+                landmarks[lower_index:higher_index] = [1] * (higher_index - lower_index)
 
         return landmarks
 
@@ -258,32 +260,30 @@ class LandmarkDetector1D(Node):
             if (echo_landmarks[i] == 0):
                 echo_landmarks[i] = np.nan
             else:
-                echo_landmarks[i] = echo_landmarks[i] * swath_array[i]
                 swath_array[i] = np.nan
 
             if (shadow_landmarks[i] == 0):
                 shadow_landmarks[i] = np.nan
             else:
-                shadow_landmarks[i] = shadow_landmarks[i] * swath_array[i]
-                swath_array[i] = np.nan  
+                swath_array[i] = np.nan
 
         self.swath_array_buffer.append(swath_array)
         self.echo_buffer.append(echo_landmarks)
         self.shadow_buffer.append(shadow_landmarks)
         self.n_msg += 1
-        print(self.n_msg)   
+          
 
-        if len(self.swath_array_buffer) > 500:
+        # if len(self.swath_array_buffer) > 500:
                 
-            self.axes.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
-            self.axes.set(
-                xlabel='Across track', 
-                ylabel='Along track', 
-                title='Detected landmarks'
-            )
-            plt.pause(10e-5)
-            self.fig.canvas.draw()
-            input("Press key to continue")
+        #     self.axes.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
+        #     self.axes.set(
+        #         xlabel='Across track', 
+        #         ylabel='Along track', 
+        #         title='Detected landmarks'
+        #     )
+        #     plt.pause(10e-5)
+        #     self.fig.canvas.draw()
+        #     input("Press key to continue")
           
 
     def plot_swath(self, ping, raw_swath: Swath, smoothed_swath: Swath):
