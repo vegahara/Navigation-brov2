@@ -5,10 +5,14 @@ from math import pi, floor
 from typing import List
 from csaps import csaps
 
+import sys
+sys.path.append('utility_functions')
+import utility_functions
+
 from rclpy.node import Node
 
 from brov2_interfaces.msg import SonarProcessed
-from geometry_msgs.msg import Pose
+from nav_msgs.msg import Odometry
 
 
 class Swath:
@@ -17,7 +21,7 @@ class Swath:
         self.swath_port = []        # Port side sonar data
         self.swath_stb = []         # Starboard side sonar data
 
-        self.pose = None            # State of the sonar upon swath arrival
+        self.odom = None            # State of the sonar upon swath arrival
         self.altitude = None        # Altitude of platform upon swath arrival
 
 class Landmark:
@@ -83,6 +87,9 @@ class LandmarkDetector1D(Node):
         self.swath_array_buffer = []    # Buffer used for plotting results
         self.echo_buffer = []           # Buffer used for plotting results
         self.shadow_buffer = []         # Buffer used for plotting results
+        self.vel_buffer = []            # Buffer used for plotting results
+        self.yaw_buffer = []            # Buffer used for plotting results
+        self.altitude_buffer = []            # Buffer used for plotting results
         self.n_msg = 0
         self.sonar = SideScanSonar(
             nS = n_samples.value,
@@ -92,8 +99,14 @@ class LandmarkDetector1D(Node):
         # For figure plotting
         self.plot_figures = True
         if self.plot_figures:
-            self.fig = plt.figure() 
-            self.axes = self.fig.add_axes([0.05,0,0.9,1])
+            self.fig, \
+            (self.ax_sonar, self.ax_vel, 
+            self.ax_yaw, self.ax_altitude) = plt.subplots(
+                1, 4, 
+                sharey=True, 
+                gridspec_kw={'width_ratios': [3, 1, 1, 1]}
+            )
+            self.fig.tight_layout()
 
         self.timer = self.create_timer(
             processing_period.value, self.find_landmarks
@@ -106,7 +119,7 @@ class LandmarkDetector1D(Node):
         swath = Swath()
 
         swath.altitude = sonar_processed_msg.altitude
-        swath.pose = sonar_processed_msg.pose
+        swath.odom = sonar_processed_msg.odom
 
         swath.swath_stb = sonar_processed_msg.data_stb
         swath.swath_port = sonar_processed_msg.data_port
@@ -198,7 +211,7 @@ class LandmarkDetector1D(Node):
         peaks, _ = find_peaks(swath) 
 
         # Remove first peak as it does not correspond to any landmark
-        # peaks = np.delete(peaks, 0)
+        peaks = np.delete(peaks, 0)
 
         prominences, left_bases, right_bases = peak_prominences(swath, peaks)
 
@@ -237,7 +250,7 @@ class LandmarkDetector1D(Node):
     def invert_swath(self, swath: Swath):
         inverted_swath = Swath()
         inverted_swath.altitude = swath.altitude
-        inverted_swath.pose = swath.pose
+        inverted_swath.odom = swath.odom
 
         max_intensity = max(max(swath.swath_port), max(swath.swath_stb))
         min_intensity = min(min(swath.swath_port), min(swath.swath_stb))
@@ -281,23 +294,71 @@ class LandmarkDetector1D(Node):
         self.swath_array_buffer.append(swath_array)
         self.echo_buffer.append(echo_landmarks)
         self.shadow_buffer.append(shadow_landmarks)
+        self.vel_buffer.append(swath.odom.twist.twist.linear.x)
+        self.altitude_buffer.append(swath.altitude)
+
+        [w,x,y,z] = [
+            swath.odom.pose.pose.orientation.w, 
+            swath.odom.pose.pose.orientation.x, 
+            swath.odom.pose.pose.orientation.y, 
+            swath.odom.pose.pose.orientation.z
+        ]
+        _pitch, yaw = utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+        self.yaw_buffer.append(yaw)
+        
         self.n_msg += 1
         print(self.n_msg)
           
 
-        if len(self.swath_array_buffer) > 1000:
-                
-            self.axes.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
-            self.axes.imshow(self.shadow_buffer, cmap='gist_gray', vmax = 1)
-            self.axes.imshow(self.echo_buffer, cmap='gist_yarg', vmax = 1)
-            self.axes.set(
+        if len(self.swath_array_buffer) > 5000:
+
+            self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
+            self.ax_sonar.imshow(self.shadow_buffer, cmap='gist_gray', vmax = 1)
+            self.ax_sonar.imshow(self.echo_buffer, cmap='gist_yarg', vmax = 1)
+            self.ax_sonar.set(
                 xlabel='Across track', 
                 ylabel='Along track', 
                 title='Detected landmarks'
             )
+
+            self.plot_subplot(
+                self.vel_buffer, self.ax_vel, 
+                'u (m/s)', 'Surge velocity'
+            )
+            self.plot_subplot(
+                self.yaw_buffer, self.ax_yaw, 
+                'psi (rad)', 'Yaw angle'
+            )
+            self.plot_subplot(
+                self.altitude_buffer, self.ax_altitude, 
+                'alt (m)', 'Altitude'
+            )
+
+            self.fig.subplots_adjust(wspace=0)
+            self.ax_sonar.margins(0)
+            
             plt.pause(10e-5)
             self.fig.canvas.draw()
             input("Press key to continue")
+
+    def plot_subplot(self, data, ax, xlabel, title): 
+        ax.plot(
+            data[::-1], 
+            [i for i in range(len(data)-1 , -1 , -1)]
+        )
+
+        asp = (
+            np.diff(ax.get_xlim()[::-1])[0] /
+            np.diff(ax.get_ylim())[0]
+        )
+        asp /= np.abs(
+            np.diff(self.ax_sonar.get_xlim())[0] / 
+            np.diff(self.ax_sonar.get_ylim())[0]
+        )
+        asp *= 3 # Same as width ratio between figures
+        
+        ax.set_aspect(asp)
+        ax.set(xlabel = xlabel, title = title, )
           
 
     def plot_swath(self, ping, raw_swath: Swath, smoothed_swath: Swath):

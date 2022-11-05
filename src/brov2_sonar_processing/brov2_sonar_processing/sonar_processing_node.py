@@ -134,7 +134,7 @@ class SonarProcessingNode(Node):
     def sonar_pub(self, swath):
         msg = SonarProcessed()
         msg.header = self.current_state.header
-        msg.pose = self.current_state.pose.pose
+        msg.odom = self.current_state
         msg.altitude = self.current_altitude
         msg.data_stb = swath.swath_right
         msg.data_port = swath.swath_left

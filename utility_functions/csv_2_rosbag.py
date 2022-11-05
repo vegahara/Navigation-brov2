@@ -96,6 +96,14 @@ def populate_odom_msg(odom_msg, df, row):
     odom_msg.pose.pose.position.y = df[' y (m)'][row]
     odom_msg.pose.pose.position.z = df[' z (m)'][row]
 
+    odom_msg.twist.twist.linear.x = df[' u (m/s)'][row]
+    odom_msg.twist.twist.linear.y = df[' v (m/s)'][row]
+    odom_msg.twist.twist.linear.z = df[' w (m/s)'][row]
+
+    odom_msg.twist.twist.angular.x = df[' p (rad/s)'][row]
+    odom_msg.twist.twist.angular.y = df[' q (rad/s)'][row]
+    odom_msg.twist.twist.angular.z = df[' r (rad/s)'][row]
+
     return odom_msg, True
 
 def main():
