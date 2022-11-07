@@ -6,6 +6,8 @@
 # capture user input, in addition to making it easier to exploit 
 # other vulnerabilities that might exist in X. 
 
+# Run this script after the container is started
+
 export containerId=$(docker ps -aqf "name=navigation-brov2")
 xhost +local:`docker inspect --format='{{ .Config.Hostname }}' $containerId`
 docker start $containerId

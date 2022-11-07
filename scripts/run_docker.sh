@@ -1,7 +1,5 @@
 #!/bin/bash
 
-./scripts/enable_GUI_docker.sh
-
 docker run  --rm -it \
             --name navigation-brov2 \
             --privileged \
