@@ -50,8 +50,8 @@ class LandmarkDetector1D(Node):
 
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
-                        ('landmark_detector_threshold', 220),
-                        ('cubic_spl_smoothing_param', 1e-2),
+                        ('landmark_detector_threshold', 30),
+                        ('cubic_spl_smoothing_param', 1e-6),
                         ('processing_period', 0.0001),
                         ('n_samples', 1000),
                         ('range_sonar', 90)]
@@ -185,6 +185,11 @@ class LandmarkDetector1D(Node):
         shadow_landmarks = self.extract_landmarks(swath, shadow_prop)
         echo_landmarks = self.extract_landmarks(swath, echo_prop)
 
+        # dummy_1 = []
+        # dummy_2 = []
+
+        # self.plot_landmarks(swath, dummy_1, dummy_2)
+
         # Not real landmarks if over x % of the swath is "landmark"
         n_bins = len(swath.swath_port) + len(swath.swath_stb)
         n_landmark_bins = 0
@@ -310,7 +315,7 @@ class LandmarkDetector1D(Node):
         print(self.n_msg)
           
 
-        if len(self.swath_array_buffer) > 5000:
+        if len(self.swath_array_buffer) > 3000:
 
             self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
             self.ax_sonar.imshow(self.shadow_buffer, cmap='gist_gray', vmax = 1)

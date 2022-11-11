@@ -1,5 +1,13 @@
 import numpy as np
-import cv2
+import cv2 as cv
+from math import pi, sqrt
+import matplotlib.pyplot as plt
+from csaps import csaps
+import copy
+
+import sys
+sys.path.append('utility_functions')
+import utility_functions
 
 from rclpy.node import Node
 
@@ -33,21 +41,37 @@ class LandmarkDetector2D(Node):
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('n_samples', 1000),
                         ('range_sonar', 90),
-                        ('scan_lines_per_frame', 500),
-                        ('processing_period', 0.001)]
+                        ('scan_lines_per_frame', 5000),
+                        ('processing_period', 0.001),
+                        ('d_obj_min', 3.0),
+                        ('min_height_shadow', 7),
+                        ('max_height_shadow', 50),
+                        ('min_corr_area', 2),
+                        ('bounding_box_fill_limit', 0.3)]
         )
                       
         (sonar_data_topic_name, 
         n_samples,
         sonar_range,
         self.scan_lines_per_frame,
-        processing_period) = \
+        processing_period,
+        self.d_obj_min,
+        self.min_height_shadow,
+        self.max_height_shadow,
+        self.min_corr_area,
+        self.bounding_box_fill_limit
+        ) = \
         self.get_parameters([
             'sonar_data_topic_name', 
             'n_samples',
             'range_sonar',
             'scan_lines_per_frame',
-            'processing_period'
+            'processing_period',
+            'd_obj_min',
+            'min_height_shadow',
+            'max_height_shadow',
+            'min_corr_area',
+            'bounding_box_fill_limit'
         ])
 
         self.sonar_processed_subscription = self.create_subscription(
@@ -62,7 +86,20 @@ class LandmarkDetector2D(Node):
             rng = sonar_range.value
         )
 
-        self.swath_buffer = []       # Buffer containing swaths to process
+        # For figure plotting
+        self.plot_figures = True
+        if self.plot_figures:
+            self.fig, \
+            (self.ax_sonar, self.ax_vel, 
+            self.ax_yaw, self.ax_altitude) = plt.subplots(
+                1, 4, 
+                sharey=True, 
+                gridspec_kw={'width_ratios': [3, 1, 1, 1]}
+            )
+            self.fig.tight_layout()
+
+        self.landmarks = None       # Containing all landmarks so far
+        self.swath_buffer = []      # Buffer containing swaths to process
 
         self.timer = self.create_timer(
             processing_period.value, self.find_landmarks
@@ -86,39 +123,165 @@ class LandmarkDetector2D(Node):
         buffer_size = len(self.swath_buffer)
         if not (buffer_size%self.scan_lines_per_frame.value == 0 and 
                 buffer_size != 0):
+            # print('Buffer size: ', buffer_size)
             return
 
-        shadow_candidates = self.find_shadow_candidates(swath_buffer)
+        self.get_logger().info("Finding landmarks in buffer.")
 
-        threshold = np.mean(swath_buffer) / 2
-        print(threshold)
-        ret, shadows = \
-            cv2.threshold(swath_buffer, threshold, 1, cv2.THRESH_BINARY)
-        print(ret)
-        contours, _ = cv2.findContours(shadows, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        swaths = self.swath_buffer[-self.scan_lines_per_frame.value:]
+
+        scanlines = []
+        altitudes = []
+
+        for swath in swaths:
+            scanline = []
+
+            swath.swath_port = self.swath_smoothing(swath.swath_port)
+            swath.swath_stb = self.swath_smoothing(swath.swath_stb)
+
+            scanline.extend(swath.swath_port)
+            scanline.extend(swath.swath_stb)
+            scanlines.append(scanline)
+            altitudes.append(swath.altitude)
+
+        sonar_im = np.asarray(scanlines, dtype=np.float64)
+
+        threshold = np.nanmean(sonar_im) / 2
+
+        threshold = 0.96
+
+        _ret, shadows = \
+            cv.threshold(sonar_im, threshold, 1.0, cv.THRESH_BINARY_INV)
+        shadows = shadows.astype(np.uint8)
+        contours, _ = cv.findContours(shadows, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+        unfiltered_shadows = copy.deepcopy(shadows)
+        mask = np.zeros(shadows.shape[:2], dtype=shadows.dtype)
         
         for cnt in contours:
-            area = cv2.contourArea(cnt)
-            x,y,w,h = cv2.boundingRect(cnt)
-            corr_area = area * self.d_ob_min.value / d_ob
+            area_shadow = cv.contourArea(cnt)
+            x,y,w,h = cv.boundingRect(cnt)
+
+            # Find the bin number of the side of the boundingbox 
+            # farest away from the AUV, i.e. the end of the shadow (eos)
+            if x < self.sonar.n_samples:
+                n_eos = self.sonar.n_samples - x
+            else:
+                n_eos = x + w - self.sonar.n_samples
+
+            echo_length = 2 * self.sonar.range * n_eos / self.sonar.n_samples
+            mean_altitude = np.mean(altitudes[y:y+h])
+
+            # Dont add shadow if echo length is smaller then height,
+            # its not physically possible
+            if echo_length < mean_altitude:
+                continue
+
+            # Find the horizontal distance from nadir to detected object
+            d_obj = sqrt(echo_length ** 2 - mean_altitude ** 2)
+
+            corr_area = area_shadow * self.d_obj_min.value / d_obj
             area_bounding_box = w * h
 
-            if (h < self.min_height_shadow.value or 
-                h > self.max_height_shadow.value or
-                corr_area <= self.min_corr_area.value or
-                area / area_bounding_box < self.bounding_box_fill_limit.value):
-                for x, y in cnt:
-                    shadows[x][y] = 0 # Remove all points thats not a shadow
+            if not (h < self.min_height_shadow.value or 
+                    h > self.max_height_shadow.value or
+                    corr_area <= self.min_corr_area.value or
+                    area_shadow / area_bounding_box < self.bounding_box_fill_limit.value):
+   
+                cv.drawContours(mask, [cnt], 0, (255), -1)
+
+        shadows = cv.bitwise_and(shadows,shadows, mask = mask)
+
+        self.landmarks = shadows 
+
+        if self.plot_figures:
+            self.plot_landmarks(swaths, scanlines, altitudes, shadows) 
+                                # unfiltered_shadows = unfiltered_shadows)
+
+
+    def swath_smoothing(self, swath):
+        x = np.linspace(0., self.sonar.n_samples - 1, self.sonar.n_samples)
+        spl = csaps(x, swath, x, smooth=1e-2)
+       
+        return spl  
+
+
+    def plot_landmarks(self, swaths, scanlines, altitudes, shadows, 
+                       velocities = None, yaws = None, unfiltered_shadows = None):
+
+        if velocities is None:
+            velocities = []
+            for swath in swaths:
+                velocities.append(swath.odom.twist.twist.linear.x)
+
+        if yaws is None:
+            yaws = []
+            for swath in swaths:
+                [w,x,y,z] = [
+                    swath.odom.pose.pose.orientation.w, 
+                    swath.odom.pose.pose.orientation.x, 
+                    swath.odom.pose.pose.orientation.y, 
+                    swath.odom.pose.pose.orientation.z
+                ]
+                _pitch, yaw = \
+                    utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+                yaws.append(yaw)
+
+        shadows = shadows.astype(np.float64)
+        shadows[shadows == 0.0] = np.nan
+
+        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = 0.6)
+
+        if unfiltered_shadows is not None:
+            unfiltered_shadows = unfiltered_shadows.astype(np.float64)
+            unfiltered_shadows[unfiltered_shadows == 0.0] = np.nan
+            self.ax_sonar.imshow(unfiltered_shadows, cmap='summer')
+
+        self.ax_sonar.imshow(shadows, cmap='spring')
+
+        self.ax_sonar.set(
+            xlabel='Across track', 
+            ylabel='Along track', 
+            title='Detected landmarks'
+        )
+
+        self.plot_subplot(
+            velocities, self.ax_vel, 
+            'u (m/s)', 'Surge velocity'
+        )
+        self.plot_subplot(
+            yaws, self.ax_yaw, 
+            'psi (rad)', 'Yaw angle'
+        )
+        self.plot_subplot(
+            altitudes, self.ax_altitude, 
+            'alt (m)', 'Altitude'
+        )
+
+        self.fig.subplots_adjust(wspace=0)
+        self.ax_sonar.margins(0)
+        
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+    def plot_subplot(self, data, ax, xlabel, title): 
+        ax.plot(
+            data[::-1], 
+            [i for i in range(len(data)-1 , -1 , -1)]
+        )
+
+        asp = (
+            np.diff(ax.get_xlim()[::-1])[0] /
+            np.diff(ax.get_ylim())[0]
+        )
+        asp /= np.abs(
+            np.diff(self.ax_sonar.get_xlim())[0] / 
+            np.diff(self.ax_sonar.get_ylim())[0]
+        )
+        asp *= 3 # Same as width ratio between figures
+        
+        ax.set_aspect(asp)
+        ax.set(xlabel = xlabel, title = title, )
 
           
-    def find_shadow_candidates(self, swath_buffer):
-        threshold = np.mean(swath_buffer) / 2
-
-        shadow_candidates = [[0] * self.sonar.n_samples] * self.scan_lines_per_frame
-
-        for i in range(self.scan_lines_per_frame):
-            for j in range(self.sonar.n_samples):
-                if swath_buffer[i][j] < threshold:
-                    shadow_candidates[i][j] = 1
-        
-        return shadow_candidates

@@ -19,15 +19,15 @@ class plot_utils:
             self.axs.plot(range(0,side_scan_data.nSamples), spline_right, color='orange', linestyle='dashed')
             self.axs.legend(["Across-track signal","Cubic spline fitted curve"], loc="upper right")
         else:
-            self.axs.plot(range(-side_scan_data.nSamples,0), swath_left[::-1], color='blue')
-            self.axs.plot(range(-side_scan_data.nSamples,0), spline_left[::-1],
+            self.axs.plot(range(-side_scan_data.nSamples,0), swath_left, color='blue')
+            self.axs.plot(range(-side_scan_data.nSamples,0), spline_left,
                           range(0,side_scan_data.nSamples),  spline_right, color='orange', zorder=3)
             self.axs.plot(range(0,side_scan_data.nSamples),  swath_right, color='blue')
             self.axs.axvline(x=0, ymin=0, color='black', linestyle='dotted')
 
             self.axs.legend(["Across-track signal", "Cubic spline fitted curve"], loc="upper right")
             
-        plt.axvline(x=np.floor_divide(altitude, side_scan_data.res), color='black', linestyle='--')
+        # plt.axvline(x=np.floor_divide(altitude, side_scan_data.res), color='black', linestyle='--')
         self.axs.set(xlabel='# of sample per ping', ylabel='Ping return (log compressed)')
         self.axs.set_title("Ping %i" % ping)
         plt.gca().axis('tight')

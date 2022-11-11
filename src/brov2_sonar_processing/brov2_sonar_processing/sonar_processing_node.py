@@ -265,11 +265,18 @@ class SonarProcessingNode(Node):
 
             self.buffer_processed_coordinate_array = self.buffer_processed_coordinate_array[int(self.scan_lines_per_stored_frame.value/2):]
 
-        swath_structure = self.buffer_unprocessed_swaths[0]   
+        swath_structure = self.buffer_unprocessed_swaths[0] 
+
+        # swath_left = swath_structure.swath_left.copy()
+        # swath_right = swath_structure.swath_right.copy()  
  
         # Intensity normalization
         swath_structure.swath_right, spl_right = self.spline.swath_normalization(swath_structure.swath_right)
         swath_structure.swath_left, spl_left = self.spline.swath_normalization(swath_structure.swath_left)
+
+        # self.plotter.plot_swath(self.n_pub_sonar, swath_structure.altitude, 
+        #     self.side_scan_data, swath_right, spl_right, 
+        #     swath_left, spl_left)
 
         # Publish data to landmark detector
         swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
@@ -293,11 +300,11 @@ class SonarProcessingNode(Node):
         swath_structure.swath_left = np.flip(swath_structure.swath_left)
 
         # Save for plotting
-        if self.plot_figures:   
-            swath_array = []
-            swath_array.extend(swath_structure.swath_left)
-            swath_array.extend(swath_structure.swath_right)
-            self.processed_swath_array.insert(0,swath_array)
+        # if self.plot_figures:   
+        #     swath_array = []
+        #     swath_array.extend(swath_structure.swath_left)
+        #     swath_array.extend(swath_structure.swath_right)
+        #     self.processed_swath_array.insert(0,swath_array)
 
         # Pose correction
         processed_coordinate_array = self.pose_correction(swath_structure)
