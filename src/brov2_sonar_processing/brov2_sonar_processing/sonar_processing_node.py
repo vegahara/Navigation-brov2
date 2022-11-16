@@ -37,7 +37,7 @@ class SonarProcessingNode(Node):
             ('scan_lines_per_stored_frame', 500),
             ('processing_period', 0.0001),
             ('number_of_samples_sonar', 1000),
-            ('range_sonar', 90)
+            ('range_sonar', 30)
         ])
             
         (sonar_data_topic_name, sonar_processed_topic_name, 
@@ -278,11 +278,6 @@ class SonarProcessingNode(Node):
         #     self.side_scan_data, swath_right, spl_right, 
         #     swath_left, spl_left)
 
-        # Publish data to landmark detector
-        swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
-        swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
-        self.sonar_pub(swath_structure)
-
         # Blind zone removal
         swath_structure.swath_right, rigth_FBR = self.blind_zone_removal(swath_structure.swath_right)
         temp_swath, left_FBR = self.blind_zone_removal(np.flip(swath_structure.swath_left))
@@ -292,6 +287,11 @@ class SonarProcessingNode(Node):
         if (not rigth_FBR) and (not left_FBR):
             self.buffer_unprocessed_swaths.pop(0)
             return
+
+        # Publish data to landmark detector
+        swath_structure.swath_right = [float(v) for v in swath_structure.swath_right]
+        swath_structure.swath_left = [float(v) for v in swath_structure.swath_left]
+        self.sonar_pub(swath_structure)
 
         # Slant range correction
         # Flipping left swath back and forth to make correction correct

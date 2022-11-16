@@ -40,7 +40,7 @@ class LandmarkDetector2D(Node):
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('n_samples', 1000),
-                        ('range_sonar', 90),
+                        ('range_sonar', 30),
                         ('scan_lines_per_frame', 5000),
                         ('processing_period', 0.001),
                         ('d_obj_min', 3.0),
@@ -146,6 +146,12 @@ class LandmarkDetector2D(Node):
 
         sonar_im = np.asarray(scanlines, dtype=np.float64)
 
+        # sonar_im = cv.GaussianBlur(
+        #     sonar_im, ksize = (5,5), 
+        #     sigmaX = 1, sigmaY = 1, 
+        #     borderType = cv.BORDER_REFLECT_101	
+        # )
+
         threshold = np.nanmean(sonar_im) / 2
 
         threshold = 0.96
@@ -153,6 +159,10 @@ class LandmarkDetector2D(Node):
         _ret, shadows = \
             cv.threshold(sonar_im, threshold, 1.0, cv.THRESH_BINARY_INV)
         shadows = shadows.astype(np.uint8)
+
+        # str_el = cv.getStructuringElement(cv.MORPH_RECT, (5,5)) 
+        # shadows = cv.morphologyEx(shadows, cv.MORPH_CLOSE, str_el) 
+
         contours, _ = cv.findContours(shadows, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
 
         unfiltered_shadows = copy.deepcopy(shadows)
@@ -195,16 +205,37 @@ class LandmarkDetector2D(Node):
         self.landmarks = shadows 
 
         if self.plot_figures:
-            self.plot_landmarks(swaths, scanlines, altitudes, shadows) 
-                                # unfiltered_shadows = unfiltered_shadows)
+            self.plot_landmarks(swaths, scanlines, altitudes, shadows, 
+                                unfiltered_shadows = unfiltered_shadows)
 
 
     def swath_smoothing(self, swath):
-        x = np.linspace(0., self.sonar.n_samples - 1, self.sonar.n_samples)
-        spl = csaps(x, swath, x, smooth=1e-2)
-       
-        return spl  
+        i = 0
+        smoothing_swath = []
+        if np.isnan(swath[0]):
+            i = 0
+            while np.isnan(swath[i]):
+                i += 1
+            smoothing_swath = swath[i:]
+        elif np.isnan(swath[-1]):
+            i = self.sonar.n_samples - 1
+            while np.isnan(swath[i]):
+                i -= 1
+            smoothing_swath = swath[:i+1]
+        else:
+            smoothing_swath = swath
+        
+        x = np.linspace(0., len(smoothing_swath) - 1, len(smoothing_swath))
+        spl = csaps(x, smoothing_swath, x, smooth=1e-2)
 
+        if np.isnan(swath[0]):
+            swath[i:] = spl
+        elif np.isnan(swath[-1]):
+            swath[:i+1] = spl
+        else:
+            swath = spl
+       
+        return swath
 
     def plot_landmarks(self, swaths, scanlines, altitudes, shadows, 
                        velocities = None, yaws = None, unfiltered_shadows = None):
