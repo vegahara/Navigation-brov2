@@ -1,4 +1,4 @@
-# Ros2 ignores
+# ROS2 ignores
 build/
 install/
 log/
@@ -15,8 +15,13 @@ EthernetSonarAPI.cpp
 # Julia
 Manifest.toml
 
-# vs code
+# VS Sode
 .vscode
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
 
 # Various folders
 processed_frames/
+bags/
