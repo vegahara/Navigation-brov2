@@ -192,15 +192,15 @@ class LandmarkDetector1D(Node):
         echo_landmarks = self.extract_landmarks(swath, echo_prop)
 
         # Not real landmarks if over x % of the swath is "landmark"
-        # n_bins = len(swath.swath_port) + len(swath.swath_stb)
-        # n_landmark_bins = 0
-        # for i in range(n_bins):
-        #     if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
-        #         n_landmark_bins += 1
+        n_bins = len(swath.swath_port) + len(swath.swath_stb)
+        n_landmark_bins = 0
+        for i in range(n_bins):
+            if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
+                n_landmark_bins += 1
         
-        # if (n_landmark_bins / len(shadow_landmarks)) > 0.25:
-        #     shadow_landmarks = [0] * n_bins
-        #     echo_landmarks = [0] * n_bins
+        if (n_landmark_bins / len(shadow_landmarks)) > 0.25:
+            shadow_landmarks = [0] * n_bins
+            echo_landmarks = [0] * n_bins
 
         if self.plot_2D:
             self.plot_landmarks(swath, echo_landmarks, shadow_landmarks)
