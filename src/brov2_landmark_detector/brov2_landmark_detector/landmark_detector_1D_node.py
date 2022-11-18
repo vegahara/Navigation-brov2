@@ -50,11 +50,11 @@ class LandmarkDetector1D(Node):
 
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
-                        ('landmark_detector_threshold', 30),
-                        ('cubic_spl_smoothing_param', 1e-6),
+                        ('landmark_detector_threshold', 400),
+                        ('cubic_spl_smoothing_param', 1e-2),
                         ('processing_period', 0.0001),
                         ('n_samples', 1000),
-                        ('range_sonar', 90)]
+                        ('range_sonar', 30)]
         )
                       
         (sonar_data_topic_name, 
@@ -89,7 +89,7 @@ class LandmarkDetector1D(Node):
         self.shadow_buffer = []         # Buffer used for plotting results
         self.vel_buffer = []            # Buffer used for plotting results
         self.yaw_buffer = []            # Buffer used for plotting results
-        self.altitude_buffer = []            # Buffer used for plotting results
+        self.altitude_buffer = []       # Buffer used for plotting results
         self.n_msg = 0
         self.sonar = SideScanSonar(
             nS = n_samples.value,
@@ -97,8 +97,14 @@ class LandmarkDetector1D(Node):
         )
 
         # For figure plotting
-        self.plot_figures = True
-        if self.plot_figures:
+        self.plot_1D = False
+        self.plot_2D = True
+
+        if self.plot_1D:
+            self.fig = plt.figure() 
+            self.axes = self.fig.add_axes([0.05,0.05,0.9,0.9])
+
+        if self.plot_2D:
             self.fig, \
             (self.ax_sonar, self.ax_vel, 
             self.ax_yaw, self.ax_altitude) = plt.subplots(
@@ -185,25 +191,23 @@ class LandmarkDetector1D(Node):
         shadow_landmarks = self.extract_landmarks(swath, shadow_prop)
         echo_landmarks = self.extract_landmarks(swath, echo_prop)
 
-        # dummy_1 = []
-        # dummy_2 = []
-
-        # self.plot_landmarks(swath, dummy_1, dummy_2)
-
         # Not real landmarks if over x % of the swath is "landmark"
-        n_bins = len(swath.swath_port) + len(swath.swath_stb)
-        n_landmark_bins = 0
-        for i in range(n_bins):
-            if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
-                n_landmark_bins += 1
+        # n_bins = len(swath.swath_port) + len(swath.swath_stb)
+        # n_landmark_bins = 0
+        # for i in range(n_bins):
+        #     if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
+        #         n_landmark_bins += 1
         
-        if (n_landmark_bins / len(shadow_landmarks)) > 0.25:
-            shadow_landmarks = [0] * n_bins
-            echo_landmarks = [0] * n_bins
+        # if (n_landmark_bins / len(shadow_landmarks)) > 0.25:
+        #     shadow_landmarks = [0] * n_bins
+        #     echo_landmarks = [0] * n_bins
 
-
-        if self.plot_figures:
+        if self.plot_2D:
             self.plot_landmarks(swath, echo_landmarks, shadow_landmarks)
+            
+        if self.plot_1D:
+            self.plot_swath_and_landmarks(swath, echo_landmarks, shadow_landmarks)
+            input('Press any key to continue')
 
         self.swath_buffer.pop(0)
 
@@ -248,7 +252,7 @@ class LandmarkDetector1D(Node):
                 lower_index = max(peak - floor(width/2), 0)
                 higher_index = min(peak + floor(width/2), n_bins)
                 landmarks[lower_index:higher_index] = [1] * (higher_index - lower_index)
-
+                
         return landmarks
 
 
@@ -315,11 +319,12 @@ class LandmarkDetector1D(Node):
         print(self.n_msg)
           
 
-        if len(self.swath_array_buffer) > 3000:
+        if len(self.swath_array_buffer) > 5700:
 
-            self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6)
-            self.ax_sonar.imshow(self.shadow_buffer, cmap='gist_gray', vmax = 1)
-            self.ax_sonar.imshow(self.echo_buffer, cmap='gist_yarg', vmax = 1)
+            self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6, vmax = 1.5)
+            # self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper')
+            self.ax_sonar.imshow(self.shadow_buffer, cmap='spring', vmax = 1)
+            self.ax_sonar.imshow(self.echo_buffer, cmap='summer', vmax = 1)
             self.ax_sonar.set(
                 xlabel='Across track', 
                 ylabel='Along track', 
@@ -400,4 +405,52 @@ class LandmarkDetector1D(Node):
         plt.pause(10e-5)
         self.fig.canvas.draw()    
 
-         
+
+    def plot_swath_and_landmarks(self, swath, echo_landmarks, shadow_landmarks):
+
+        swath_array = []
+        swath_array.extend(swath.swath_port)
+        swath_array.extend(swath.swath_stb)
+
+        for i in range(len(swath_array)):
+
+            if (echo_landmarks[i] == 0):
+                echo_landmarks[i] = np.nan
+            else:
+                echo_landmarks[i] = swath_array[i]
+
+            if (shadow_landmarks[i] == 0):
+                shadow_landmarks[i] = np.nan
+            else:
+                shadow_landmarks[i] = swath_array[i]
+
+        self.axes.cla()
+
+        self.axes.plot(
+            range(-self.sonar.n_samples,self.sonar.n_samples), 
+            swath_array, color='black'
+        )
+        self.axes.plot(
+            range(-self.sonar.n_samples,self.sonar.n_samples), 
+            echo_landmarks, color='limegreen'
+        )
+        self.axes.plot(
+            range(-self.sonar.n_samples,self.sonar.n_samples), 
+            shadow_landmarks, color='magenta'
+        )
+        self.axes.axvline(x=0, ymin=0, color='black', linestyle='dotted')
+
+        self.axes.legend(
+            ["Across-track signal", "Detected echo landmarks", "Detected shadow landmarks"], 
+            loc="upper right"
+        )
+
+        self.axes.set(
+            xlabel='Bin #', 
+            ylabel='Echo return intesity'
+        )
+
+        plt.gca().axis('tight')
+
+        plt.pause(10e-5)
+        self.fig.canvas.draw() 
