@@ -50,7 +50,7 @@ class LandmarkDetector1D(Node):
 
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
-                        ('landmark_detector_threshold', 400),
+                        ('landmark_detector_threshold', 6),
                         ('cubic_spl_smoothing_param', 1e-2),
                         ('processing_period', 0.0001),
                         ('n_samples', 1000),
@@ -98,7 +98,8 @@ class LandmarkDetector1D(Node):
 
         # For figure plotting
         self.plot_1D = False
-        self.plot_2D = True
+        self.plot_2D = False
+        self.plot_2D_only_scan_lines = True
 
         if self.plot_1D:
             self.fig = plt.figure() 
@@ -111,6 +112,14 @@ class LandmarkDetector1D(Node):
                 1, 4, 
                 sharey=True, 
                 gridspec_kw={'width_ratios': [3, 1, 1, 1]}
+            )
+            self.fig.tight_layout()
+
+        if self.plot_2D_only_scan_lines:
+            self.fig, \
+            (self.ax_sonar) = plt.subplots(
+                1, 1, 
+                sharey=True, 
             )
             self.fig.tight_layout()
 
@@ -202,7 +211,7 @@ class LandmarkDetector1D(Node):
             shadow_landmarks = [0] * n_bins
             echo_landmarks = [0] * n_bins
 
-        if self.plot_2D:
+        if self.plot_2D or self.plot_2D_only_scan_lines:
             self.plot_landmarks(swath, echo_landmarks, shadow_landmarks)
             
         if self.plot_1D:
@@ -321,28 +330,30 @@ class LandmarkDetector1D(Node):
 
         if len(self.swath_array_buffer) > 5700:
 
-            self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6, vmax = 1.5)
-            # self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper')
+            # self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6, vmax = 1.5)
+            self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper')
             self.ax_sonar.imshow(self.shadow_buffer, cmap='spring', vmax = 1)
             self.ax_sonar.imshow(self.echo_buffer, cmap='summer', vmax = 1)
             self.ax_sonar.set(
                 xlabel='Across track', 
                 ylabel='Along track', 
-                title='Detected landmarks'
+                title='Detected landmarks (t = 6)'
             )
 
-            self.plot_subplot(
-                self.vel_buffer, self.ax_vel, 
-                'u (m/s)', 'Surge velocity'
-            )
-            self.plot_subplot(
-                self.yaw_buffer, self.ax_yaw, 
-                'psi (rad)', 'Yaw angle'
-            )
-            self.plot_subplot(
-                self.altitude_buffer, self.ax_altitude, 
-                'alt (m)', 'Altitude'
-            )
+            if not self.plot_2D_only_scan_lines:
+
+                self.plot_subplot(
+                    self.vel_buffer, self.ax_vel, 
+                    'u (m/s)', 'Surge velocity'
+                )
+                self.plot_subplot(
+                    self.yaw_buffer, self.ax_yaw, 
+                    'psi (rad)', 'Yaw angle'
+                )
+                self.plot_subplot(
+                    self.altitude_buffer, self.ax_altitude, 
+                    'alt (m)', 'Altitude'
+                )
 
             self.fig.subplots_adjust(wspace=0)
             self.ax_sonar.margins(0)
