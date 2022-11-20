@@ -41,13 +41,14 @@ class LandmarkDetector2D(Node):
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('n_samples', 1000),
                         ('range_sonar', 30),
-                        ('scan_lines_per_frame', 5000),
+                        ('scan_lines_per_frame', 5700),
                         ('processing_period', 0.001),
                         ('d_obj_min', 3.0),
-                        ('min_height_shadow', 7),
-                        ('max_height_shadow', 50),
-                        ('min_corr_area', 2),
-                        ('bounding_box_fill_limit', 0.3)]
+                        ('min_height_shadow', 50),
+                        ('max_height_shadow', 150),
+                        ('min_corr_area', 80),
+                        ('bounding_box_fill_limit', 0.3),
+                        ('intensity_threshold', 0.64)]
         )
                       
         (sonar_data_topic_name, 
@@ -59,7 +60,8 @@ class LandmarkDetector2D(Node):
         self.min_height_shadow,
         self.max_height_shadow,
         self.min_corr_area,
-        self.bounding_box_fill_limit
+        self.bounding_box_fill_limit,
+        self.intensity_threshold
         ) = \
         self.get_parameters([
             'sonar_data_topic_name', 
@@ -71,7 +73,8 @@ class LandmarkDetector2D(Node):
             'min_height_shadow',
             'max_height_shadow',
             'min_corr_area',
-            'bounding_box_fill_limit'
+            'bounding_box_fill_limit',
+            'intensity_threshold'
         ])
 
         self.sonar_processed_subscription = self.create_subscription(
@@ -95,6 +98,30 @@ class LandmarkDetector2D(Node):
                 1, 4, 
                 sharey=True, 
                 gridspec_kw={'width_ratios': [3, 1, 1, 1]}
+            )
+            self.fig.tight_layout()
+
+        # Plotting used for tuning 
+        self.plot_for_tuning = False
+        if self.plot_for_tuning:
+            self.fig, \
+            (self.ax_sonar, self.ax_sonar_height, 
+            self.ax_sonar_area, self.ax_sonar_fill_rate,
+            self.ax_sonar_landmarks) = plt.subplots(
+                1, 5, 
+                sharey=True, 
+            )
+            self.fig.tight_layout()
+
+        # Plotting used for tuning of intensity threshold
+        self.plot_for_tuning_threshold = False
+        if self.plot_for_tuning_threshold:
+            self.fig, \
+            (self.ax_sonar, self.ax_sonar_threshold_1, 
+            self.ax_sonar_threshold_2, 
+            self.ax_sonar_threshold_3) = plt.subplots(
+                1, 4, 
+                sharey=True, 
             )
             self.fig.tight_layout()
 
@@ -123,7 +150,6 @@ class LandmarkDetector2D(Node):
         buffer_size = len(self.swath_buffer)
         if not (buffer_size%self.scan_lines_per_frame.value == 0 and 
                 buffer_size != 0):
-            # print('Buffer size: ', buffer_size)
             return
 
         self.get_logger().info("Finding landmarks in buffer.")
@@ -146,27 +172,60 @@ class LandmarkDetector2D(Node):
 
         sonar_im = np.asarray(scanlines, dtype=np.float64)
 
-        # sonar_im = cv.GaussianBlur(
-        #     sonar_im, ksize = (5,5), 
-        #     sigmaX = 1, sigmaY = 1, 
-        #     borderType = cv.BORDER_REFLECT_101	
-        # )
+        sonar_im = cv.GaussianBlur(
+            sonar_im, ksize = (5,5), 
+            sigmaX = 1, sigmaY = 1, 
+            borderType = cv.BORDER_REFLECT_101	
+        )
 
-        threshold = np.nanmean(sonar_im) / 2
+        # Take the mean over the 10 smallest elements for improved robustnes
+        idx = np.argpartition(sonar_im.flatten(), 10)
+        min = np.nanmean(sonar_im.flatten()[idx[:10]])
+        mean = np.nanmean(sonar_im)
 
-        threshold = 0.96
+        threshold = (mean - min) * self.intensity_threshold.value + min
+
+        print(threshold)
 
         _ret, shadows = \
             cv.threshold(sonar_im, threshold, 1.0, cv.THRESH_BINARY_INV)
         shadows = shadows.astype(np.uint8)
 
-        # str_el = cv.getStructuringElement(cv.MORPH_RECT, (5,5)) 
-        # shadows = cv.morphologyEx(shadows, cv.MORPH_CLOSE, str_el) 
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (5,5)) 
+        shadows = cv.morphologyEx(shadows, cv.MORPH_CLOSE, str_el) 
 
         contours, _ = cv.findContours(shadows, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
 
-        unfiltered_shadows = copy.deepcopy(shadows)
         mask = np.zeros(shadows.shape[:2], dtype=shadows.dtype)
+
+        if self.plot_figures:
+            shadows_unfiltered = copy.deepcopy(shadows)
+        elif self.plot_for_tuning:
+            shadows_unfiltered = copy.deepcopy(shadows)
+            mask_height_sel = np.zeros(shadows.shape[:2], dtype=shadows.dtype)
+            mask_area_sel = np.zeros(shadows.shape[:2], dtype=shadows.dtype)
+            mask_fill_sel = np.zeros(shadows.shape[:2], dtype=shadows.dtype)
+        elif self.plot_for_tuning_threshold:
+            intensity_threshold_1 = 0.60
+            intensity_threshold_2 = 0.64
+            intensity_threshold_3 = 0.68
+
+            threshold_1 = (mean - min) * intensity_threshold_1 + min
+            threshold_2 = (mean - min) * intensity_threshold_2 + min
+            threshold_3 = (mean - min) * intensity_threshold_3 + min
+
+            _ret, shadows_1 = \
+                cv.threshold(sonar_im, threshold_1, 1.0, cv.THRESH_BINARY_INV)
+            shadows_1 = shadows_1.astype(np.uint8)
+
+            _ret, shadows_2 = \
+                cv.threshold(sonar_im, threshold_2, 1.0, cv.THRESH_BINARY_INV)
+            shadows_2 = shadows_2.astype(np.uint8)
+
+            _ret, shadows_3 = \
+                cv.threshold(sonar_im, threshold_3, 1.0, cv.THRESH_BINARY_INV)
+            shadows_3 = shadows_3.astype(np.uint8)
+
         
         for cnt in contours:
             area_shadow = cv.contourArea(cnt)
@@ -200,13 +259,50 @@ class LandmarkDetector2D(Node):
    
                 cv.drawContours(mask, [cnt], 0, (255), -1)
 
-        shadows = cv.bitwise_and(shadows,shadows, mask = mask)
+            if self.plot_for_tuning:
+                if not (h < self.min_height_shadow.value or 
+                        h > self.max_height_shadow.value):
+                    cv.drawContours(mask_height_sel, [cnt], 0, (255), -1)
+                
+                if not (corr_area <= self.min_corr_area.value):
+                    cv.drawContours(mask_area_sel, [cnt], 0, (255), -1)
 
-        self.landmarks = shadows 
+                if not (area_shadow / area_bounding_box < self.bounding_box_fill_limit.value):
+                    cv.drawContours(mask_fill_sel, [cnt], 0, (255), -1)
+
+
+        if self.plot_for_tuning:
+            shadows_height_sel = cv.bitwise_and(shadows,shadows, 
+                                                mask = mask_height_sel)
+            shadows_area_sel = cv.bitwise_and(shadows_height_sel,shadows_height_sel, 
+                                                mask = mask_area_sel)
+            shadows_fill_sel = cv.bitwise_and(shadows_height_sel,shadows_height_sel, 
+                                              mask = mask_fill_sel)
+
+        shadows = cv.bitwise_and(shadows,shadows, mask = mask)
 
         if self.plot_figures:
             self.plot_landmarks(swaths, scanlines, altitudes, shadows, 
-                                unfiltered_shadows = unfiltered_shadows)
+                shadows_unfiltered = shadows_unfiltered)
+
+        elif self.plot_for_tuning:
+            self.plot_landmarks_for_tuning(
+                scanlines, shadows, 
+                shadows_unfiltered = shadows_unfiltered,
+                shadows_height_sel = shadows_height_sel,
+                shadows_area_sel = shadows_area_sel,
+                shadows_fill_sel = shadows_fill_sel
+                )
+
+        elif self.plot_for_tuning_threshold:
+            self.plot_landmarks_for_tuning_threshold(
+                scanlines, shadows_1, shadows_2, shadows_3,
+                intensity_threshold_1,
+                intensity_threshold_2,
+                intensity_threshold_3 
+            )
+
+        self.landmarks = shadows 
 
 
     def swath_smoothing(self, swath):
@@ -238,7 +334,8 @@ class LandmarkDetector2D(Node):
         return swath
 
     def plot_landmarks(self, swaths, scanlines, altitudes, shadows, 
-                       velocities = None, yaws = None, unfiltered_shadows = None):
+                       velocities = None, yaws = None, 
+                       shadows_unfiltered = None):
 
         if velocities is None:
             velocities = []
@@ -261,13 +358,13 @@ class LandmarkDetector2D(Node):
         shadows = shadows.astype(np.float64)
         shadows[shadows == 0.0] = np.nan
 
-        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = 0.6)
+        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = 0.6, vmax = 1.5)
 
-        if unfiltered_shadows is not None:
-            unfiltered_shadows = unfiltered_shadows.astype(np.float64)
-            unfiltered_shadows[unfiltered_shadows == 0.0] = np.nan
-            self.ax_sonar.imshow(unfiltered_shadows, cmap='summer')
-
+        if shadows_unfiltered is not None:
+            shadows_unfiltered = shadows_unfiltered.astype(np.float64)
+            shadows_unfiltered[shadows_unfiltered == 0.0] = np.nan
+            self.ax_sonar.imshow(shadows_unfiltered, cmap='summer')
+            
         self.ax_sonar.imshow(shadows, cmap='spring')
 
         self.ax_sonar.set(
@@ -295,6 +392,127 @@ class LandmarkDetector2D(Node):
         plt.pause(10e-5)
         self.fig.canvas.draw()
         input("Press key to continue")
+
+    def plot_landmarks_for_tuning(self, scanlines, shadows, 
+                                  shadows_unfiltered, shadows_height_sel,
+                                  shadows_area_sel, shadows_fill_sel,
+                                  vmin = 0.6, vmax = 1.5):
+
+        shadows = shadows.astype(np.float64)
+        shadows[shadows == 0.0] = np.nan
+        shadows_unfiltered = shadows_unfiltered.astype(np.float64)
+        shadows_unfiltered[shadows_unfiltered == 0.0] = np.nan
+        shadows_height_sel = shadows_height_sel.astype(np.float64)
+        shadows_height_sel[shadows_height_sel == 0.0] = np.nan
+        shadows_area_sel = shadows_area_sel.astype(np.float64)
+        shadows_area_sel[shadows_area_sel == 0.0] = np.nan
+        shadows_fill_sel = shadows_fill_sel.astype(np.float64)
+        shadows_fill_sel[shadows_fill_sel == 0.0] = np.nan
+        
+        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+
+        self.ax_sonar_height.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_height.imshow(shadows_unfiltered, cmap='summer')
+        self.ax_sonar_height.imshow(shadows_height_sel, cmap='spring')   
+
+        self.ax_sonar_area.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_area.imshow(shadows_height_sel, cmap='summer')
+        self.ax_sonar_area.imshow(shadows_area_sel, cmap='spring') 
+
+        self.ax_sonar_fill_rate.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_fill_rate.imshow(shadows_area_sel, cmap='summer')
+        self.ax_sonar_fill_rate.imshow(shadows_fill_sel, cmap='spring') 
+
+        self.ax_sonar_landmarks.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_landmarks.imshow(shadows, cmap='spring')
+
+        self.ax_sonar.set(
+            xlabel='Across track', 
+            ylabel='Along track', 
+            title='Sonar image'
+        )
+        self.ax_sonar_height.set(
+            xlabel='Across track', 
+            title='Landmarks - height filtered'
+        )
+        self.ax_sonar_area.set(
+            xlabel='Across track', 
+            title='Landmarks - area filtered'
+        )
+        self.ax_sonar_fill_rate.set(
+            xlabel='Across track', 
+            title='Landmarks - fill rate filtered'
+        )
+        self.ax_sonar_landmarks.set(
+            xlabel='Across track', 
+            title='Landmarks - result'
+        )
+
+        self.fig.subplots_adjust(wspace=0)
+        self.ax_sonar.margins(0)
+        self.ax_sonar_height.margins(0)
+        self.ax_sonar_area.margins(0)
+        self.ax_sonar_fill_rate.margins(0)
+        self.ax_sonar_landmarks.margins(0)
+        
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+    def plot_landmarks_for_tuning_threshold(
+            self, scanlines, shadows_1, shadows_2, shadows_3,
+            intensity_threshold_1,
+            intensity_threshold_2,
+            intensity_threshold_3, 
+            vmin = 0.6, vmax = 1.5
+        ):
+
+        shadows_1 = shadows_1.astype(np.float64)
+        shadows_1[shadows_1 == 0.0] = np.nan
+        shadows_2 = shadows_2.astype(np.float64)
+        shadows_2[shadows_2 == 0.0] = np.nan
+        shadows_3 = shadows_3.astype(np.float64)
+        shadows_3[shadows_3 == 0.0] = np.nan
+        
+        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+
+        self.ax_sonar_threshold_1.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_1.imshow(shadows_1, cmap='summer')
+ 
+        self.ax_sonar_threshold_2.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_2.imshow(shadows_2, cmap='summer')
+
+        self.ax_sonar_threshold_3.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_3.imshow(shadows_3, cmap='summer')
+
+        self.ax_sonar.set(
+            xlabel='Across track', 
+            ylabel='Along track', 
+            title='Sonar image'
+        )
+        self.ax_sonar_threshold_1.set(
+            xlabel='Across track', 
+            title='Intensity threshold: ' + str(intensity_threshold_1)
+        )
+        self.ax_sonar_threshold_2.set(
+            xlabel='Across track', 
+            title='Intensity threshold: ' + str(intensity_threshold_2)
+        )
+        self.ax_sonar_threshold_3.set(
+            xlabel='Across track', 
+            title='Intensity threshold: ' + str(intensity_threshold_3)
+        )
+
+        self.fig.subplots_adjust(wspace=0)
+        self.ax_sonar.margins(0)
+        self.ax_sonar_threshold_1.margins(0)
+        self.ax_sonar_threshold_2.margins(0)
+        self.ax_sonar_threshold_3.margins(0)
+        
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
 
     def plot_subplot(self, data, ax, xlabel, title): 
         ax.plot(
