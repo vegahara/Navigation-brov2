@@ -1,6 +1,6 @@
 import numpy as np
 import cv2 as cv
-from math import pi, sqrt
+from math import pi, sqrt, tanh, sin
 import matplotlib.pyplot as plt
 from csaps import csaps
 import copy
@@ -41,14 +41,14 @@ class LandmarkDetector2D(Node):
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('n_samples', 1000),
                         ('range_sonar', 30),
-                        ('scan_lines_per_frame', 5700),
+                        ('scan_lines_per_frame', 16000),
                         ('processing_period', 0.001),
                         ('d_obj_min', 3.0),
                         ('min_height_shadow', 50),
                         ('max_height_shadow', 150),
                         ('min_corr_area', 80),
                         ('bounding_box_fill_limit', 0.3),
-                        ('intensity_threshold', 0.64)]
+                        ('intensity_threshold', 0.9)]
         )
                       
         (sonar_data_topic_name, 
@@ -90,7 +90,7 @@ class LandmarkDetector2D(Node):
         )
 
         # For figure plotting
-        self.plot_figures = True
+        self.plot_figures = False
         if self.plot_figures:
             self.fig, \
             (self.ax_sonar, self.ax_vel, 
@@ -102,14 +102,16 @@ class LandmarkDetector2D(Node):
             self.fig.tight_layout()
 
         # Plotting used for tuning 
-        self.plot_for_tuning = False
+        self.plot_for_tuning = True
         if self.plot_for_tuning:
             self.fig, \
             (self.ax_sonar, self.ax_sonar_height, 
             self.ax_sonar_area, self.ax_sonar_fill_rate,
-            self.ax_sonar_landmarks) = plt.subplots(
-                1, 5, 
-                sharey=True, 
+            self.ax_sonar_landmarks, self.ax_quality_indicator,
+            self.ax_speed) = plt.subplots(
+                1, 7, 
+                sharey=False, 
+                gridspec_kw={'width_ratios': [10, 10, 10, 10, 10, 1, 1]}
             )
             self.fig.tight_layout()
 
@@ -119,8 +121,10 @@ class LandmarkDetector2D(Node):
             self.fig, \
             (self.ax_sonar, self.ax_sonar_threshold_1, 
             self.ax_sonar_threshold_2, 
-            self.ax_sonar_threshold_3) = plt.subplots(
-                1, 4, 
+            self.ax_sonar_threshold_3,
+            self.ax_quality_indicator,
+            self.ax_speed) = plt.subplots(
+                1, 6, 
                 sharey=True, 
             )
             self.fig.tight_layout()
@@ -155,7 +159,6 @@ class LandmarkDetector2D(Node):
         self.get_logger().info("Finding landmarks in buffer.")
 
         swaths = self.swath_buffer[-self.scan_lines_per_frame.value:]
-
         scanlines = []
         altitudes = []
 
@@ -179,9 +182,12 @@ class LandmarkDetector2D(Node):
         )
 
         # Take the mean over the 10 smallest elements for improved robustnes
-        idx = np.argpartition(sonar_im.flatten(), 10)
-        min = np.nanmean(sonar_im.flatten()[idx[:10]])
+        idx = np.argpartition(sonar_im.flatten(), 100)
+        min = np.nanmean(sonar_im.flatten()[idx[:100]])
         mean = np.nanmean(sonar_im)
+
+        print(min)
+        print(mean)
 
         threshold = (mean - min) * self.intensity_threshold.value + min
 
@@ -287,7 +293,7 @@ class LandmarkDetector2D(Node):
 
         elif self.plot_for_tuning:
             self.plot_landmarks_for_tuning(
-                scanlines, shadows, 
+                swaths, scanlines, shadows, 
                 shadows_unfiltered = shadows_unfiltered,
                 shadows_height_sel = shadows_height_sel,
                 shadows_area_sel = shadows_area_sel,
@@ -296,15 +302,92 @@ class LandmarkDetector2D(Node):
 
         elif self.plot_for_tuning_threshold:
             self.plot_landmarks_for_tuning_threshold(
-                scanlines, shadows_1, shadows_2, shadows_3,
+                swaths, scanlines, 
+                shadows_1, shadows_2, shadows_3,
                 intensity_threshold_1,
                 intensity_threshold_2,
                 intensity_threshold_3 
             )
 
-        self.landmarks = shadows 
+        self.landmarks = shadows
+
+    def find_swath_properties(self, swaths, k = 4):
+
+        quality_indicators = []
+        distance_traveled = []
+        speeds = []
+
+        old_x = 0
+        old_y = 0
+        old_yaw = 0
+        speed = 0
+        current_distance = 0
+
+        # Handle first swath
+        [w,x,y,z] = [
+                swaths[0].odom.pose.pose.orientation.w, 
+                swaths[0].odom.pose.pose.orientation.x, 
+                swaths[0].odom.pose.pose.orientation.y, 
+                swaths[0].odom.pose.pose.orientation.z
+        ]
+        _pitch, yaw = \
+                utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+
+        old_yaw = yaw
+        old_x = swaths[0].odom.pose.pose.position.x
+        old_y = swaths[0].odom.pose.pose.position.y
+
+        speed = sqrt(
+            swaths[0].odom.twist.twist.linear.x**2 +
+            swaths[0].odom.twist.twist.linear.y**2
+        )
+
+        quality_indicators.append(1.0)
+        distance_traveled.append(current_distance)
+        speeds.append(speed)
 
 
+        # Find properties for the rest of the swaths
+        for swath in swaths[1:]:
+            [w,x,y,z] = [
+                    swath.odom.pose.pose.orientation.w, 
+                    swath.odom.pose.pose.orientation.x, 
+                    swath.odom.pose.pose.orientation.y, 
+                    swath.odom.pose.pose.orientation.z
+            ]
+            _pitch, yaw = \
+                    utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+            delta_x = swath.odom.pose.pose.position.x - old_x
+            delta_y = swath.odom.pose.pose.position.y - old_y
+
+            delta_dist = sqrt(delta_x**2 + delta_y**2)
+            delta_yaw = abs(yaw - old_yaw)
+
+            if delta_yaw == 0:
+                q = 1
+            else:
+                l = delta_dist / sin(delta_yaw)
+                r = self.sonar.range
+
+                q = 0.5 * (tanh(k * ((l / r) - 0.5)) + 1)
+
+            speed = sqrt(
+                swath.odom.twist.twist.linear.x**2 +
+                swath.odom.twist.twist.linear.y**2
+            )
+
+            old_x = swath.odom.pose.pose.position.x
+            old_y = swath.odom.pose.pose.position.y
+            old_yaw = yaw
+            current_distance += delta_dist
+
+            quality_indicators.append(q)
+            distance_traveled.append(current_distance)
+            speeds.append(speed)    
+
+        return quality_indicators, distance_traveled, speeds
+
+ 
     def swath_smoothing(self, swath):
         i = 0
         smoothing_swath = []
@@ -393,10 +476,28 @@ class LandmarkDetector2D(Node):
         self.fig.canvas.draw()
         input("Press key to continue")
 
-    def plot_landmarks_for_tuning(self, scanlines, shadows, 
+    def plot_landmarks_for_tuning(self, swaths, scanlines, shadows, 
                                   shadows_unfiltered, shadows_height_sel,
                                   shadows_area_sel, shadows_fill_sel,
                                   vmin = 0.6, vmax = 1.5):
+
+        quality_indicators, distance_traveled, speeds = \
+            self.find_swath_properties(swaths)
+
+        # Invert to get better representation using summer colourmap
+        quality_indicators = [(1.0 - x) for x in quality_indicators]
+
+        quality_im = []
+        speed_im = []
+        width_speed_and_quality = 200
+
+        for i in range(width_speed_and_quality):
+            quality_im.append(quality_indicators)
+        for i in range(width_speed_and_quality):
+            speed_im.append(speeds)
+
+        quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
+        speed_im = np.transpose(np.array(speed_im, dtype = np.float64))
 
         shadows = shadows.astype(np.float64)
         shadows[shadows == 0.0] = np.nan
@@ -426,6 +527,31 @@ class LandmarkDetector2D(Node):
         self.ax_sonar_landmarks.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
         self.ax_sonar_landmarks.imshow(shadows, cmap='spring')
 
+        self.ax_quality_indicator.imshow(quality_im, cmap = 'summer', vmin = 0, vmax = 1)
+        self.ax_speed.imshow(speed_im, cmap = 'winter')
+
+        self.ax_sonar_height.set_yticks([])
+        self.ax_sonar_area.set_yticks([])
+        self.ax_sonar_fill_rate.set_yticks([])
+        self.ax_sonar_landmarks.set_yticks([])
+        self.ax_quality_indicator.set_yticks([])
+        self.ax_quality_indicator.set_xticks([])
+        self.ax_speed.set_xticks([])
+
+        locs = self.ax_speed.get_yticks()
+        labels = []
+    
+        for i in locs:
+            if i in range(len(distance_traveled)):
+                labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            else:
+                labels.append('')
+
+        self.ax_speed.set_yticklabels(labels)
+        self.ax_speed.yaxis.tick_right()
+
+        self.fig.tight_layout()
+
         self.ax_sonar.set(
             xlabel='Across track', 
             ylabel='Along track', 
@@ -454,18 +580,24 @@ class LandmarkDetector2D(Node):
         self.ax_sonar_area.margins(0)
         self.ax_sonar_fill_rate.margins(0)
         self.ax_sonar_landmarks.margins(0)
+        self.ax_quality_indicator.margins(0)
+        self.ax_speed.margins(0)
         
         plt.pause(10e-5)
         self.fig.canvas.draw()
         input("Press key to continue")
 
     def plot_landmarks_for_tuning_threshold(
-            self, scanlines, shadows_1, shadows_2, shadows_3,
+            self, swaths,
+            scanlines, shadows_1, shadows_2, shadows_3,
             intensity_threshold_1,
             intensity_threshold_2,
             intensity_threshold_3, 
             vmin = 0.6, vmax = 1.5
         ):
+
+        quality_indicators, distance_traveled, speeds = \
+            self.find_swath_properties(swaths)
 
         shadows_1 = shadows_1.astype(np.float64)
         shadows_1[shadows_1 == 0.0] = np.nan
