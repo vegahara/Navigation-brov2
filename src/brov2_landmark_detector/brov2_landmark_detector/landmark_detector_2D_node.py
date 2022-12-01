@@ -1,6 +1,6 @@
 import numpy as np
 import cv2 as cv
-from math import pi, sqrt, tanh, sin
+from math import pi, sqrt, tanh, tan, sin
 import matplotlib.pyplot as plt
 from csaps import csaps
 import copy
@@ -41,7 +41,8 @@ class LandmarkDetector2D(Node):
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
                         ('n_samples', 1000),
                         ('range_sonar', 30),
-                        ('scan_lines_per_frame', 16000),
+                        ('tranducer_angle', pi/4),
+                        ('scan_lines_per_frame', 3000),
                         ('processing_period', 0.001),
                         ('d_obj_min', 3.0),
                         ('min_height_shadow', 50),
@@ -54,6 +55,7 @@ class LandmarkDetector2D(Node):
         (sonar_data_topic_name, 
         n_samples,
         sonar_range,
+        transducer_angle,
         self.scan_lines_per_frame,
         processing_period,
         self.d_obj_min,
@@ -67,6 +69,7 @@ class LandmarkDetector2D(Node):
             'sonar_data_topic_name', 
             'n_samples',
             'range_sonar',
+            'tranducer_angle',
             'scan_lines_per_frame',
             'processing_period',
             'd_obj_min',
@@ -86,7 +89,8 @@ class LandmarkDetector2D(Node):
 
         self.sonar = SideScanSonar(
             nS = n_samples.value,
-            rng = sonar_range.value
+            rng = sonar_range.value,
+            sensor_angle_placement = transducer_angle.value
         )
 
         # For figure plotting
@@ -311,11 +315,13 @@ class LandmarkDetector2D(Node):
 
         self.landmarks = shadows
 
-    def find_swath_properties(self, swaths, k = 4):
+    def find_swath_properties(self, swaths, k = 6):
 
+        quality_indicators_old = []
         quality_indicators = []
         distance_traveled = []
         speeds = []
+        ground_ranges = []
 
         old_x = 0
         old_y = 0
@@ -342,10 +348,14 @@ class LandmarkDetector2D(Node):
             swaths[0].odom.twist.twist.linear.y**2
         )
 
+        ground_range = (swaths[0].altitude / 
+            tan(self.sonar.theta - self.sonar.alpha / 2))
+
+        quality_indicators_old.append(1.0)
         quality_indicators.append(1.0)
         distance_traveled.append(current_distance)
         speeds.append(speed)
-
+        ground_ranges.append(ground_range)
 
         # Find properties for the rest of the swaths
         for swath in swaths[1:]:
@@ -366,10 +376,25 @@ class LandmarkDetector2D(Node):
             if delta_yaw == 0:
                 q = 1
             else:
-                l = delta_dist / sin(delta_yaw)
+                l = delta_dist / tan(delta_yaw)
+
+                q = 0.5 * (tanh(k * ((l / ground_range) - 0.5)) + 1)
+
+            ground_range = (swath.altitude / 
+                tan(self.sonar.theta - self.sonar.alpha / 2))
+            
+            quality_indicators.append(q)
+            ground_ranges.append(ground_range)
+
+            if delta_yaw == 0:
+                q = 1
+            else:
+                l = delta_dist / tan(delta_yaw)
                 r = self.sonar.range
 
                 q = 0.5 * (tanh(k * ((l / r) - 0.5)) + 1)
+            
+            quality_indicators_old.append(q)
 
             speed = sqrt(
                 swath.odom.twist.twist.linear.x**2 +
@@ -381,11 +406,11 @@ class LandmarkDetector2D(Node):
             old_yaw = yaw
             current_distance += delta_dist
 
-            quality_indicators.append(q)
+            
             distance_traveled.append(current_distance)
             speeds.append(speed)    
 
-        return quality_indicators, distance_traveled, speeds
+        return quality_indicators_old, quality_indicators, ground_ranges, distance_traveled, speeds
 
  
     def swath_smoothing(self, swath):
@@ -481,10 +506,12 @@ class LandmarkDetector2D(Node):
                                   shadows_area_sel, shadows_fill_sel,
                                   vmin = 0.6, vmax = 1.5):
 
-        quality_indicators, distance_traveled, speeds = \
+        quality_indicators_old, quality_indicators, ground_ranges, \
+        distance_traveled, speeds = \
             self.find_swath_properties(swaths)
 
         # Invert to get better representation using summer colourmap
+        quality_indicators_old = [(1.0 - x) for x in quality_indicators_old]
         quality_indicators = [(1.0 - x) for x in quality_indicators]
 
         quality_im = []
@@ -492,12 +519,44 @@ class LandmarkDetector2D(Node):
         width_speed_and_quality = 200
 
         for i in range(width_speed_and_quality):
-            quality_im.append(quality_indicators)
+            quality_im.append(quality_indicators_old)
         for i in range(width_speed_and_quality):
-            speed_im.append(speeds)
+            speed_im.append(quality_indicators)
 
         quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
         speed_im = np.transpose(np.array(speed_im, dtype = np.float64))
+
+        ground_range_im = np.empty((len(ground_ranges), 2 * self.sonar.n_samples))
+        ground_range_im[:] = np.nan
+
+        ground_range_width = 16
+
+        for i in range(len(ground_ranges)):
+            # index = round(sqrt(ground_ranges[i]**2 + swaths[i].altitude**2) * 
+            #     2 * self.sonar.n_samples / self.sonar.range)
+
+            index = round((swaths[i].altitude / 
+                sin(self.sonar.theta - self.sonar.alpha / 2)) *  
+                2 * self.sonar.n_samples / self.sonar.range)
+
+
+            ground_range_im[i][\
+                self.sonar.n_samples - index - ground_range_width // 2:
+                self.sonar.n_samples - index + ground_range_width // 2] = 1
+            ground_range_im[i][\
+                self.sonar.n_samples + index - ground_range_width // 2:
+                self.sonar.n_samples + index + ground_range_width // 2] = 1
+
+            index = round((swaths[i].altitude / 
+                sin(self.sonar.theta + self.sonar.alpha / 2)) *  
+                2 * self.sonar.n_samples / self.sonar.range)
+
+            ground_range_im[i][\
+                self.sonar.n_samples - index - ground_range_width // 2:
+                self.sonar.n_samples - index + ground_range_width // 2] = 0
+            ground_range_im[i][\
+                self.sonar.n_samples + index - ground_range_width // 2:
+                self.sonar.n_samples + index + ground_range_width // 2] = 0
 
         shadows = shadows.astype(np.float64)
         shadows[shadows == 0.0] = np.nan
@@ -511,6 +570,7 @@ class LandmarkDetector2D(Node):
         shadows_fill_sel[shadows_fill_sel == 0.0] = np.nan
         
         self.ax_sonar.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar.imshow(ground_range_im, cmap='autumn', vmax=1)
 
         self.ax_sonar_height.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
         self.ax_sonar_height.imshow(shadows_unfiltered, cmap='summer')
@@ -526,9 +586,11 @@ class LandmarkDetector2D(Node):
 
         self.ax_sonar_landmarks.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
         self.ax_sonar_landmarks.imshow(shadows, cmap='spring')
+        self.ax_sonar_landmarks.imshow(ground_range_im, cmap='autumn', vmax=1)
 
         self.ax_quality_indicator.imshow(quality_im, cmap = 'summer', vmin = 0, vmax = 1)
-        self.ax_speed.imshow(speed_im, cmap = 'winter')
+        self.ax_speed.imshow(speed_im, cmap = 'summer')
+        # self.ax_speed.imshow(speed_im, cmap = 'winter')
 
         self.ax_sonar_height.set_yticks([])
         self.ax_sonar_area.set_yticks([])
@@ -582,7 +644,7 @@ class LandmarkDetector2D(Node):
         self.ax_sonar_landmarks.margins(0)
         self.ax_quality_indicator.margins(0)
         self.ax_speed.margins(0)
-        
+
         plt.pause(10e-5)
         self.fig.canvas.draw()
         input("Press key to continue")
@@ -596,7 +658,7 @@ class LandmarkDetector2D(Node):
             vmin = 0.6, vmax = 1.5
         ):
 
-        quality_indicators, distance_traveled, speeds = \
+        quality_indicators_old, distance_traveled, speeds = \
             self.find_swath_properties(swaths)
 
         shadows_1 = shadows_1.astype(np.float64)
