@@ -2,6 +2,7 @@ import numpy as np
 import cv2 as cv
 from math import pi, sqrt, tanh, tan, sin
 import matplotlib.pyplot as plt
+import matplotlib.colors as plt_colors
 from csaps import csaps
 import copy
 
@@ -93,6 +94,9 @@ class LandmarkDetector2D(Node):
             sensor_angle_placement = transducer_angle.value
         )
 
+        # Set fontsize for all images and plots
+        plt.rcParams.update({'font.size': 20})
+
         # For figure plotting
         self.plot_figures = False
         if self.plot_figures:
@@ -106,7 +110,7 @@ class LandmarkDetector2D(Node):
             self.fig.tight_layout()
 
         # Plotting used for tuning 
-        self.plot_for_tuning = True
+        self.plot_for_tuning = False
         if self.plot_for_tuning:
             self.fig, \
             (self.ax_sonar, self.ax_sonar_height, 
@@ -130,6 +134,18 @@ class LandmarkDetector2D(Node):
             self.ax_speed) = plt.subplots(
                 1, 6, 
                 sharey=True, 
+            )
+            self.fig.tight_layout()
+
+        # Plotting used for checking quality indicator 
+        self.plot_path_for_quality = True
+        if self.plot_path_for_quality:
+            self.fig, \
+            (self.ax_path, self.ax_sonar, 
+            self.ax_quality_indicator) = plt.subplots(
+                1, 3, 
+                sharey=False, 
+                gridspec_kw={'width_ratios': [10, 10, 1,]}
             )
             self.fig.tight_layout()
 
@@ -313,9 +329,12 @@ class LandmarkDetector2D(Node):
                 intensity_threshold_3 
             )
 
+        elif self.plot_path_for_quality:
+            self.plot_path(swaths, scanlines)
+
         self.landmarks = shadows
 
-    def find_swath_properties(self, swaths, k = 6):
+    def find_swath_properties(self, swaths, k = 4):
 
         quality_indicators_old = []
         quality_indicators = []
@@ -501,6 +520,103 @@ class LandmarkDetector2D(Node):
         self.fig.canvas.draw()
         input("Press key to continue")
 
+    def plot_path(self, swaths, scanlines, vmin = 0.6, vmax = 1.5):
+
+        quality_indicators_old, quality_indicators, ground_ranges, \
+        distance_traveled, speeds = \
+            self.find_swath_properties(swaths)
+
+        # Invert to get better representation using summer colourmap
+        quality_indicators = [(1.0 - x) for x in quality_indicators]
+
+        quality_im = []
+        speed_im = []
+        width_speed_and_quality = 200
+
+        for i in range(width_speed_and_quality):
+            quality_im.append(quality_indicators)
+
+        quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
+
+        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["green","yellow","red"]))
+        )
+
+        x_coordinates = []
+        y_coordinates = []
+
+        for swath in swaths:
+            x_coordinates.append(swath.odom.pose.pose.position.x)
+            y_coordinates.append(swath.odom.pose.pose.position.y)
+
+
+        self.ax_path.scatter(x_coordinates,y_coordinates, 
+            c=quality_cmap(quality_indicators), edgecolor='none'
+        )
+        
+        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_quality_indicator.imshow(quality_im, cmap = quality_cmap, \
+            vmin = 0, vmax = 1)
+
+        self.ax_sonar.axhline(150, c='k', ls='--')
+        self.ax_sonar.axhline(780, c='k', ls='--')
+        self.ax_sonar.axhline(965, c='k', ls='--')
+        self.ax_sonar.axhline(1570, c='k', ls='--')
+        self.ax_sonar.axhline(1780, c='k', ls='--')
+        self.ax_sonar.axhline(2400, c='k', ls='--')
+        self.ax_sonar.axhline(2600, c='k', ls='--')                                                                      
+
+        # Trick to get last tick on sonar image
+        self.ax_quality_indicator.set_xticks([0.0])
+        self.ax_quality_indicator.set_xticklabels(['1000'])
+
+        ticks = [0.0, 500.0, 1000.0, 1500.0, 2000.0]
+        labels = ['-1000', '-500', '0', '500', '1000']
+
+        self.ax_sonar.set_xticks(ticks)
+        self.ax_sonar.set_xticklabels(labels)
+
+        locs = self.ax_quality_indicator.get_yticks()
+        labels = []
+    
+        for i in locs:
+            if i in range(len(distance_traveled)):
+                labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            else:
+                labels.append('')
+
+        self.ax_quality_indicator.set_yticklabels(labels)
+        self.ax_quality_indicator.yaxis.tick_right()
+
+        for i, txt in zip(locs, labels):
+            i = round(i)
+            if i in range(len(x_coordinates)):
+                self.ax_path.annotate(txt, (x_coordinates[i], y_coordinates[i]))
+                self.ax_path.scatter(
+                    x_coordinates[i], y_coordinates[i], c='k', edgecolor='none'
+                )
+
+        self.fig.tight_layout()
+
+        self.ax_sonar.set(
+            xlabel='Across track',
+            ylabel='Along track', 
+        )
+
+        self.fig.subplots_adjust(wspace=0)
+        self.ax_sonar.margins(0)
+        self.ax_quality_indicator.margins(0)
+
+        plt.subplots_adjust(left=0.07, bottom=0.08, right=0.92, top=0.92, wspace=0, hspace=0)
+         
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+
+
+        
+
     def plot_landmarks_for_tuning(self, swaths, scanlines, shadows, 
                                   shadows_unfiltered, shadows_height_sel,
                                   shadows_area_sel, shadows_fill_sel,
@@ -519,9 +635,9 @@ class LandmarkDetector2D(Node):
         width_speed_and_quality = 200
 
         for i in range(width_speed_and_quality):
-            quality_im.append(quality_indicators_old)
+            quality_im.append(quality_indicators)
         for i in range(width_speed_and_quality):
-            speed_im.append(quality_indicators)
+            speed_im.append(speeds)
 
         quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
         speed_im = np.transpose(np.array(speed_im, dtype = np.float64))
@@ -537,7 +653,7 @@ class LandmarkDetector2D(Node):
 
             index = round((swaths[i].altitude / 
                 sin(self.sonar.theta - self.sonar.alpha / 2)) *  
-                2 * self.sonar.n_samples / self.sonar.range)
+                1 * self.sonar.n_samples / self.sonar.range)
 
 
             ground_range_im[i][\
@@ -549,7 +665,7 @@ class LandmarkDetector2D(Node):
 
             index = round((swaths[i].altitude / 
                 sin(self.sonar.theta + self.sonar.alpha / 2)) *  
-                2 * self.sonar.n_samples / self.sonar.range)
+                1 * self.sonar.n_samples / self.sonar.range)
 
             ground_range_im[i][\
                 self.sonar.n_samples - index - ground_range_width // 2:
@@ -588,17 +704,35 @@ class LandmarkDetector2D(Node):
         self.ax_sonar_landmarks.imshow(shadows, cmap='spring')
         self.ax_sonar_landmarks.imshow(ground_range_im, cmap='autumn', vmax=1)
 
-        self.ax_quality_indicator.imshow(quality_im, cmap = 'summer', vmin = 0, vmax = 1)
-        self.ax_speed.imshow(speed_im, cmap = 'summer')
-        # self.ax_speed.imshow(speed_im, cmap = 'winter')
+        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["green","yellow","red"]))
+        )
+
+        self.ax_quality_indicator.imshow(quality_im, cmap = quality_cmap, \
+            vmin = 0, vmax = 1)
+        # self.ax_speed.imshow(speed_im, cmap = 'summer')
+        self.ax_speed.imshow(speed_im, cmap = 'winter')
 
         self.ax_sonar_height.set_yticks([])
         self.ax_sonar_area.set_yticks([])
         self.ax_sonar_fill_rate.set_yticks([])
         self.ax_sonar_landmarks.set_yticks([])
         self.ax_quality_indicator.set_yticks([])
-        self.ax_quality_indicator.set_xticks([])
         self.ax_speed.set_xticks([])
+
+        # Trick to get last tick on sonar image
+        self.ax_quality_indicator.set_xticks([0.0])
+        self.ax_quality_indicator.set_xticklabels(['1000'])
+
+        ax_im_lst = [self.ax_sonar, self.ax_sonar_area,
+            self.ax_sonar_fill_rate, self.ax_sonar_height, self.ax_sonar_landmarks]
+
+        ticks = [0.0, 500.0, 1000.0, 1500.0, 2000.0]
+        labels = ['-1000', '-500', '0', '500', '1000']
+
+        for ax in ax_im_lst:
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels)
 
         locs = self.ax_speed.get_yticks()
         labels = []
@@ -615,25 +749,21 @@ class LandmarkDetector2D(Node):
         self.fig.tight_layout()
 
         self.ax_sonar.set(
-            xlabel='Across track', 
             ylabel='Along track', 
-            title='Sonar image'
+            title='Sonar\nimage'
         )
         self.ax_sonar_height.set(
-            xlabel='Across track', 
-            title='Landmarks - height filtered'
+            title='Landmarks\nheight filtered'
         )
         self.ax_sonar_area.set(
             xlabel='Across track', 
-            title='Landmarks - area filtered'
+            title='Landmarks\narea filtered'
         )
         self.ax_sonar_fill_rate.set(
-            xlabel='Across track', 
-            title='Landmarks - fill rate filtered'
+            title='Landmarks\nfill rate filtered'
         )
         self.ax_sonar_landmarks.set(
-            xlabel='Across track', 
-            title='Landmarks - result'
+            title='Landmarks\nresult'
         )
 
         self.fig.subplots_adjust(wspace=0)
@@ -645,6 +775,8 @@ class LandmarkDetector2D(Node):
         self.ax_quality_indicator.margins(0)
         self.ax_speed.margins(0)
 
+        plt.subplots_adjust(left=0.07, bottom=0, right=0.92, top=1, wspace=0, hspace=0)
+         
         plt.pause(10e-5)
         self.fig.canvas.draw()
         input("Press key to continue")
@@ -726,5 +858,6 @@ class LandmarkDetector2D(Node):
         
         ax.set_aspect(asp)
         ax.set(xlabel = xlabel, title = title, )
+
 
           
