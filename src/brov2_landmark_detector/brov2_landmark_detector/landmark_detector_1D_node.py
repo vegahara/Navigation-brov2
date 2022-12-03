@@ -1,7 +1,9 @@
 import numpy as np
+import cv2 as cv
 import matplotlib.pyplot as plt
+import matplotlib.colors as plt_colors
 from scipy.signal import find_peaks, peak_prominences, peak_widths
-from math import pi, floor
+from math import pi, floor, sqrt, tanh, tan, sin
 from typing import List
 from csaps import csaps
 
@@ -50,8 +52,9 @@ class LandmarkDetector1D(Node):
 
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
-                        ('landmark_detector_threshold', 6),
-                        ('cubic_spl_smoothing_param', 1e-2),
+                        ('landmark_detector_threshold', 1550),
+                        ('cubic_spl_smoothing_param', 1e-5),
+                        ('max_landmarks_per_scan', 1.0),
                         ('processing_period', 0.0001),
                         ('n_samples', 1000),
                         ('range_sonar', 30)]
@@ -60,6 +63,7 @@ class LandmarkDetector1D(Node):
         (sonar_data_topic_name, 
         self.landmark_threshold,  
         self.cubic_spl_smoothing_param,
+        self.max_landmarks_per_scan,
         processing_period,
         n_samples,
         sonar_range) = \
@@ -67,6 +71,7 @@ class LandmarkDetector1D(Node):
             'sonar_data_topic_name', 
             'landmark_detector_threshold',
             'cubic_spl_smoothing_param',
+            'max_landmarks_per_scan',
             'processing_period',
             'n_samples',
             'range_sonar'
@@ -84,12 +89,14 @@ class LandmarkDetector1D(Node):
         self.swath_buffer = []          # Buffer for buffering incoming messages
         self.shadow_landmarks = []      # Containing all detected shadow landmarks 
         self.echo_landmarks = []        # Containing all detected echo landmarks 
-        self.swath_array_buffer = []    # Buffer used for plotting results
-        self.echo_buffer = []           # Buffer used for plotting results
-        self.shadow_buffer = []         # Buffer used for plotting results
-        self.vel_buffer = []            # Buffer used for plotting results
-        self.yaw_buffer = []            # Buffer used for plotting results
-        self.altitude_buffer = []       # Buffer used for plotting results
+
+        # Plotting buffers
+        self.swath_array_buffer = []    
+        self.echo_buffer = []           
+        self.shadow_buffer = []         
+        self.vel_buffer = []         
+        self.yaw_buffer = []          
+        self.altitude_buffer = []     
         self.n_msg = 0
         self.sonar = SideScanSonar(
             nS = n_samples.value,
@@ -100,6 +107,10 @@ class LandmarkDetector1D(Node):
         self.plot_1D = False
         self.plot_2D = False
         self.plot_2D_only_scan_lines = True
+        self.plot_2D_for_tuning = False
+
+        # Set fontsize for all images and plots
+        plt.rcParams.update({'font.size': 20})
 
         if self.plot_1D:
             self.fig = plt.figure() 
@@ -116,10 +127,35 @@ class LandmarkDetector1D(Node):
             self.fig.tight_layout()
 
         if self.plot_2D_only_scan_lines:
+            self.swaths = []
+
+            self.fig = plt.figure()
+            self.ax_sonar = self.fig.add_subplot(111)
+            self.ax_dummy = self.ax_sonar.twinx()
+            self.fig.tight_layout()
+
+        if self.plot_2D_for_tuning:
+            self.swaths = []
+            self.scanlines = []
+            self.echo_buffer_1 = []           
+            self.shadow_buffer_1 = []
+            self.echo_buffer_2 = []           
+            self.shadow_buffer_2 = []
+            self.echo_buffer_3 = []           
+            self.shadow_buffer_3 = []
+            self.threshold_1 = 1500
+            self.threshold_2 = 1550
+            self.threshold_3 = 1600
+
             self.fig, \
-            (self.ax_sonar) = plt.subplots(
-                1, 1, 
-                sharey=True, 
+            (self.ax_sonar, self.ax_sonar_threshold_1, 
+            self.ax_sonar_threshold_2, 
+            self.ax_sonar_threshold_3,
+            self.ax_quality_indicator,
+            self.ax_speed) = plt.subplots(
+                1, 6, 
+                sharey=False, 
+                gridspec_kw={'width_ratios': [10, 10, 10, 10, 1, 1]} 
             )
             self.fig.tight_layout()
 
@@ -197,27 +233,92 @@ class LandmarkDetector1D(Node):
         echo_prop.extend(echo_prop_port)
         echo_prop.extend(echo_prop_stb)
 
-        shadow_landmarks = self.extract_landmarks(swath, shadow_prop)
-        echo_landmarks = self.extract_landmarks(swath, echo_prop)
-
-        # Not real landmarks if over x % of the swath is "landmark"
-        n_bins = len(swath.swath_port) + len(swath.swath_stb)
-        n_landmark_bins = 0
-        for i in range(n_bins):
-            if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
-                n_landmark_bins += 1
-        
-        if (n_landmark_bins / len(shadow_landmarks)) > 0.25:
-            shadow_landmarks = [0] * n_bins
-            echo_landmarks = [0] * n_bins
+        shadow_landmarks = self.extract_landmarks(
+            swath, shadow_prop, self.landmark_threshold.value
+        )
+        echo_landmarks = self.extract_landmarks(
+            swath, echo_prop, self.landmark_threshold.value
+        )
+        shadow_landmarks, echo_landmarks = self.filter_landmarks(
+            shadow_landmarks, echo_landmarks
+        )
 
         if self.plot_2D or self.plot_2D_only_scan_lines:
-            self.plot_landmarks(swath, echo_landmarks, shadow_landmarks)
+
+            swath_array = []
+            swath_array.extend(swath.swath_port)
+            swath_array.extend(swath.swath_stb)
+            self.swath_array_buffer.append(swath_array)
+            self.swaths.append(swath)  
+            self.echo_buffer.append(echo_landmarks)
+            self.shadow_buffer.append(shadow_landmarks)
+            self.vel_buffer.append(swath.odom.twist.twist.linear.x)
+            self.altitude_buffer.append(swath.altitude)
+
+            [w,x,y,z] = [
+                swath.odom.pose.pose.orientation.w, 
+                swath.odom.pose.pose.orientation.x, 
+                swath.odom.pose.pose.orientation.y, 
+                swath.odom.pose.pose.orientation.z
+            ]
+            _pitch, yaw = utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+            self.yaw_buffer.append(yaw)
+
+            if (len(self.swath_array_buffer) == 2999):
+                self.get_logger().info("Plotting")
+                self.plot_landmarks()
             
         if self.plot_1D:
             self.plot_swath_and_landmarks(swath, echo_landmarks, shadow_landmarks)
             input('Press any key to continue')
 
+        if self.plot_2D_for_tuning:
+            swath_array = []
+            swath_array.extend(swath.swath_port)
+            swath_array.extend(swath.swath_stb)
+            self.swath_array_buffer.append(swath_array)
+            self.swaths.append(swath)  
+
+            shadow_landmarks = self.extract_landmarks(
+                swath, shadow_prop, self.threshold_1
+            )
+            echo_landmarks = self.extract_landmarks(
+                swath, echo_prop, self.threshold_1
+            )
+            shadow_landmarks, echo_landmarks = self.filter_landmarks(
+                shadow_landmarks, echo_landmarks
+            )
+            self.shadow_buffer_1.append(shadow_landmarks)
+            self.echo_buffer_1.append(echo_landmarks)
+
+            shadow_landmarks = self.extract_landmarks(
+                swath, shadow_prop, self.threshold_2
+            )
+            echo_landmarks = self.extract_landmarks(
+                swath, echo_prop, self.threshold_2
+            )
+            shadow_landmarks, echo_landmarks = self.filter_landmarks(
+                shadow_landmarks, echo_landmarks
+            )
+            self.shadow_buffer_2.append(shadow_landmarks)
+            self.echo_buffer_2.append(echo_landmarks)
+
+            shadow_landmarks = self.extract_landmarks(
+                swath, shadow_prop, self.threshold_3
+            )
+            echo_landmarks = self.extract_landmarks(
+                swath, echo_prop, self.threshold_3
+            )
+            shadow_landmarks, echo_landmarks = self.filter_landmarks(
+                shadow_landmarks, echo_landmarks
+            )
+            self.shadow_buffer_3.append(shadow_landmarks)
+            self.echo_buffer_3.append(echo_landmarks)
+
+            if (len(self.swath_array_buffer) == 4890):
+                self.get_logger().info("Plotting")
+                self.plot_for_tuning()
+                 
         self.swath_buffer.pop(0)
 
         # How to handle landmark detection when we detect both shadows and echoes? Should they be matched up?
@@ -245,13 +346,13 @@ class LandmarkDetector1D(Node):
         return swath_properties
 
 
-    def extract_landmarks(self, swath: Swath, swath_properties):
+    def extract_landmarks(self, swath: Swath, swath_properties, threshold):
         n_bins = len(swath.swath_port) + len(swath.swath_stb)
         landmarks = [0] * n_bins
         
         for (peak, prominence, width) in swath_properties:
 
-            if (2 * width) / prominence < self.landmark_threshold.value:
+            if (2 * width) / prominence < threshold:
                 self.shadow_landmarks.append(Landmark(
                     self.get_global_pos(swath, peak), 
                     width, 
@@ -263,6 +364,20 @@ class LandmarkDetector1D(Node):
                 landmarks[lower_index:higher_index] = [1] * (higher_index - lower_index)
                 
         return landmarks
+
+    def filter_landmarks(self, shadow_landmarks, echo_landmarks):
+        # Not real landmarks if over x % of the swath is "landmark"
+        n_bins = 2 * self.sonar.n_samples
+        n_landmark_bins = 0
+        for i in range(n_bins):
+            if (shadow_landmarks[i] == 1) or (echo_landmarks[i] == 1):
+                n_landmark_bins += 1
+        
+        if (n_landmark_bins / n_bins) > self.max_landmarks_per_scan.value:
+            shadow_landmarks = [0] * n_bins
+            echo_landmarks = [0] * n_bins
+
+        return shadow_landmarks, echo_landmarks
 
 
     def invert_swath(self, swath: Swath):
@@ -291,76 +406,75 @@ class LandmarkDetector1D(Node):
        
         return spl   
 
-    def plot_landmarks(self, swath: Swath, echo_landmarks, shadow_landmarks):
-        
-        swath_array = []
-        swath_array.extend(swath.swath_port)
-        swath_array.extend(swath.swath_stb)
+    def plot_landmarks(self, vmin = 0.6, vmax = 1.5):
 
-        for i in range(len(swath_array)):
+        quality_indicators_old, quality_indicators, ground_ranges, \
+            distance_traveled, speeds = \
+            self.find_swath_indicators(self.swaths)
+                 
+        self.shadow_buffer = np.asarray(self.shadow_buffer, dtype = np.float64)
+        self.echo_buffer = np.asarray(self.echo_buffer, dtype = np.float64)
 
-            if (echo_landmarks[i] == 0):
-                echo_landmarks[i] = np.nan
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (10,10)) 
+        self.shadow_buffer = cv.morphologyEx(self.shadow_buffer, cv.MORPH_CLOSE, str_el)
+        self.echo_buffer = cv.morphologyEx(self.echo_buffer, cv.MORPH_CLOSE, str_el) 
+
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (15,15)) 
+        self.shadow_buffer = cv.morphologyEx(self.shadow_buffer, cv.MORPH_OPEN, str_el)
+        self.echo_buffer = cv.morphologyEx(self.echo_buffer, cv.MORPH_OPEN, str_el) 
+
+        self.shadow_buffer[self.shadow_buffer == 0] = np.nan
+        self.echo_buffer[self.echo_buffer == 0] = np.nan
+
+        self.ax_dummy.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_dummy.imshow(self.shadow_buffer, cmap='spring', vmax = 1)
+        self.ax_dummy.imshow(self.echo_buffer, cmap='summer', vmax = 1)
+        self.ax_sonar.set(
+            xlabel='Across track', 
+            ylabel='Along track', 
+        )
+
+        # if not self.plot_2D_only_scan_lines:
+
+        #     self.plot_subplot(
+        #         self.vel_buffer, self.ax_vel, 
+        #         'u (m/s)', 'Surge velocity'
+        #     )
+        #     self.plot_subplot(
+        #         self.yaw_buffer, self.ax_yaw, 
+        #         'psi (rad)', 'Yaw angle'
+        #     )
+        #     self.plot_subplot(
+        #         self.altitude_buffer, self.ax_altitude, 
+        #         'alt (m)', 'Altitude'
+        #     )
+
+        ticks = [0.0, 500.0, 1000.0, 1500.0, 1999.0]
+        labels = ['-1000', '-500', '0', '500', '1000']
+
+        self.ax_sonar.set_xticks(ticks)
+        self.ax_sonar.set_xticklabels(labels)
+
+        locs = self.ax_sonar.get_yticks()
+        labels = []
+    
+        for i in locs:
+            if i in range(len(distance_traveled)):
+                labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
             else:
-                swath_array[i] = np.nan
+                labels.append('')
 
-            if (shadow_landmarks[i] == 0):
-                shadow_landmarks[i] = np.nan
-            else:
-                swath_array[i] = np.nan
+        self.ax_dummy.set_yticklabels(labels)
 
-        self.swath_array_buffer.append(swath_array)
-        self.echo_buffer.append(echo_landmarks)
-        self.shadow_buffer.append(shadow_landmarks)
-        self.vel_buffer.append(swath.odom.twist.twist.linear.x)
-        self.altitude_buffer.append(swath.altitude)
+        self.fig.subplots_adjust(wspace=0)
+        self.ax_sonar.margins(0)
 
-        [w,x,y,z] = [
-            swath.odom.pose.pose.orientation.w, 
-            swath.odom.pose.pose.orientation.x, 
-            swath.odom.pose.pose.orientation.y, 
-            swath.odom.pose.pose.orientation.z
-        ]
-        _pitch, yaw = utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
-        self.yaw_buffer.append(yaw)
+        plt.subplots_adjust(left=0.3, bottom=0.1, right=0.64, top=0.95, wspace=0, hspace=0)
         
-        self.n_msg += 1
-        print(self.n_msg)
-          
-
-        if len(self.swath_array_buffer) > 5700:
-
-            # self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = 0.6, vmax = 1.5)
-            self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper')
-            self.ax_sonar.imshow(self.shadow_buffer, cmap='spring', vmax = 1)
-            self.ax_sonar.imshow(self.echo_buffer, cmap='summer', vmax = 1)
-            self.ax_sonar.set(
-                xlabel='Across track', 
-                ylabel='Along track', 
-                title='Detected landmarks (t = 6)'
-            )
-
-            if not self.plot_2D_only_scan_lines:
-
-                self.plot_subplot(
-                    self.vel_buffer, self.ax_vel, 
-                    'u (m/s)', 'Surge velocity'
-                )
-                self.plot_subplot(
-                    self.yaw_buffer, self.ax_yaw, 
-                    'psi (rad)', 'Yaw angle'
-                )
-                self.plot_subplot(
-                    self.altitude_buffer, self.ax_altitude, 
-                    'alt (m)', 'Altitude'
-                )
-
-            self.fig.subplots_adjust(wspace=0)
-            self.ax_sonar.margins(0)
-            
-            plt.pause(10e-5)
-            self.fig.canvas.draw()
-            input("Press key to continue")
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
 
     def plot_subplot(self, data, ax, xlabel, title): 
         ax.plot(
@@ -465,3 +579,236 @@ class LandmarkDetector1D(Node):
 
         plt.pause(10e-5)
         self.fig.canvas.draw() 
+
+    def plot_for_tuning(self, vmin = 0.6, vmax = 1.5):
+        quality_indicators_old, quality_indicators, ground_ranges, \
+            distance_traveled, speeds = \
+            self.find_swath_indicators(self.swaths)
+
+        # Invert to get better representation using summer colourmap
+        quality_indicators = [(1.0 - x) for x in quality_indicators]
+
+        quality_im = []
+        speed_im = []
+        width_speed_and_quality = 200
+
+        for i in range(width_speed_and_quality):
+            quality_im.append(quality_indicators)
+        for i in range(width_speed_and_quality):
+            speed_im.append(speeds)
+
+        quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
+        speed_im = np.transpose(np.array(speed_im, dtype = np.float64))
+
+        self.shadow_buffer_1 = np.asarray(self.shadow_buffer_1, dtype = np.float64)
+        self.shadow_buffer_2 = np.asarray(self.shadow_buffer_2, dtype = np.float64)
+        self.shadow_buffer_3 = np.asarray(self.shadow_buffer_3, dtype = np.float64)
+        self.echo_buffer_1 = np.asarray(self.echo_buffer_1, dtype = np.float64)
+        self.echo_buffer_2 = np.asarray(self.echo_buffer_2, dtype = np.float64)
+        self.echo_buffer_3 = np.asarray(self.echo_buffer_3, dtype = np.float64)
+
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (10,10)) 
+        self.shadow_buffer_1 = cv.morphologyEx(self.shadow_buffer_1, cv.MORPH_CLOSE, str_el)
+        self.shadow_buffer_2 = cv.morphologyEx(self.shadow_buffer_2, cv.MORPH_CLOSE, str_el)
+        self.shadow_buffer_3 = cv.morphologyEx(self.shadow_buffer_3, cv.MORPH_CLOSE, str_el)
+        self.echo_buffer_1 = cv.morphologyEx(self.echo_buffer_1, cv.MORPH_CLOSE, str_el) 
+        self.echo_buffer_2 = cv.morphologyEx(self.echo_buffer_2, cv.MORPH_CLOSE, str_el) 
+        self.echo_buffer_3 = cv.morphologyEx(self.echo_buffer_3, cv.MORPH_CLOSE, str_el) 
+
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (15,15)) 
+        self.shadow_buffer_1 = cv.morphologyEx(self.shadow_buffer_1, cv.MORPH_OPEN, str_el)
+        self.shadow_buffer_2 = cv.morphologyEx(self.shadow_buffer_2, cv.MORPH_OPEN, str_el)
+        self.shadow_buffer_3 = cv.morphologyEx(self.shadow_buffer_3, cv.MORPH_OPEN, str_el)
+        self.echo_buffer_1 = cv.morphologyEx(self.echo_buffer_1, cv.MORPH_OPEN, str_el) 
+        self.echo_buffer_2 = cv.morphologyEx(self.echo_buffer_2, cv.MORPH_OPEN, str_el) 
+        self.echo_buffer_3 = cv.morphologyEx(self.echo_buffer_3, cv.MORPH_OPEN, str_el) 
+
+        self.shadow_buffer_1[self.shadow_buffer_1 == 0] = np.nan
+        self.shadow_buffer_2[self.shadow_buffer_2 == 0] = np.nan
+        self.shadow_buffer_3[self.shadow_buffer_3 == 0] = np.nan    
+        self.echo_buffer_1[self.echo_buffer_1 == 0] = np.nan
+        self.echo_buffer_2[self.echo_buffer_2 == 0] = np.nan
+        self.echo_buffer_3[self.echo_buffer_3 == 0] = np.nan
+
+        self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+
+        self.ax_sonar_threshold_1.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_1.imshow(self.shadow_buffer_1, cmap='spring', vmax = 1)
+        self.ax_sonar_threshold_1.imshow(self.echo_buffer_1, cmap='summer', vmax = 1)
+ 
+        self.ax_sonar_threshold_2.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_2.imshow(self.shadow_buffer_2, cmap='spring', vmax = 1)
+        self.ax_sonar_threshold_2.imshow(self.echo_buffer_2, cmap='summer', vmax = 1)
+
+        self.ax_sonar_threshold_3.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_3.imshow(self.shadow_buffer_3, cmap='spring', vmax = 1)
+        self.ax_sonar_threshold_3.imshow(self.echo_buffer_3, cmap='summer', vmax = 1)
+
+        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["green","yellow","red"]))
+        )
+
+        self.ax_quality_indicator.imshow(quality_im, cmap = quality_cmap, \
+            vmin = 0, vmax = 1)
+        self.ax_speed.imshow(speed_im, cmap = 'winter')
+
+        self.ax_sonar_threshold_1.set_yticks([])
+        self.ax_sonar_threshold_2.set_yticks([])
+        self.ax_sonar_threshold_3.set_yticks([])
+        self.ax_quality_indicator.set_yticks([])
+        self.ax_speed.set_xticks([])
+
+        # Trick to get last tick on sonar image
+        self.ax_quality_indicator.set_xticks([0.0])
+        self.ax_quality_indicator.set_xticklabels(['1000'])
+
+        ax_im_lst = [self.ax_sonar, self.ax_sonar_threshold_1,
+            self.ax_sonar_threshold_2, self.ax_sonar_threshold_3]
+
+        ticks = [0.0, 500.0, 1000.0, 1500.0, 2000.0]
+        labels = ['-1000', '-500', '0', '500', '1000']
+
+        for ax in ax_im_lst:
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels)
+
+        locs = self.ax_speed.get_yticks()
+        labels = []
+    
+        for i in locs:
+            if i in range(len(distance_traveled)):
+                labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            else:
+                labels.append('')
+
+        self.ax_speed.set_yticklabels(labels)
+        self.ax_speed.yaxis.tick_right()
+
+        self.ax_sonar.set(
+            ylabel='Along track', 
+            title='Sonar image'
+        )
+        self.ax_sonar_threshold_1.set(
+            title='Threshold: ' + str(self.threshold_1)
+        )
+        self.ax_sonar_threshold_2.set(
+            title='Threshold: ' + str(self.threshold_2)
+        )
+        self.ax_sonar_threshold_3.set( 
+            title='Threshold: ' + str(self.threshold_3)
+        )
+        self.ax_sonar_threshold_1.set_xlabel(
+            'Across track', 
+            x = 1.0
+        )
+
+        self.fig.subplots_adjust(wspace=0)
+        self.ax_sonar.margins(0)
+        self.ax_sonar_threshold_1.margins(0)
+        self.ax_sonar_threshold_2.margins(0)
+        self.ax_sonar_threshold_3.margins(0)
+        self.ax_quality_indicator.margins(0)
+        self.ax_speed.margins(0)
+
+        plt.subplots_adjust(left=0.1, bottom=0, right=0.89, top=1, wspace=0, hspace=0)
+        
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+    def find_swath_indicators(self, swaths, k = 4):
+
+        quality_indicators_old = []
+        quality_indicators = []
+        distance_traveled = []
+        speeds = []
+        ground_ranges = []
+
+        old_x = 0
+        old_y = 0
+        old_yaw = 0
+        speed = 0
+        current_distance = 0
+
+        # Handle first swath
+        [w,x,y,z] = [
+                swaths[0].odom.pose.pose.orientation.w, 
+                swaths[0].odom.pose.pose.orientation.x, 
+                swaths[0].odom.pose.pose.orientation.y, 
+                swaths[0].odom.pose.pose.orientation.z
+        ]
+        _pitch, yaw = \
+                utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+
+        old_yaw = yaw
+        old_x = swaths[0].odom.pose.pose.position.x
+        old_y = swaths[0].odom.pose.pose.position.y
+
+        speed = sqrt(
+            swaths[0].odom.twist.twist.linear.x**2 +
+            swaths[0].odom.twist.twist.linear.y**2
+        )
+
+        ground_range = (swaths[0].altitude / 
+            tan(self.sonar.theta - self.sonar.alpha / 2))
+
+        quality_indicators_old.append(1.0)
+        quality_indicators.append(1.0)
+        distance_traveled.append(current_distance)
+        speeds.append(speed)
+        ground_ranges.append(ground_range)
+
+        # Find properties for the rest of the swaths
+        for swath in swaths[1:]:
+            [w,x,y,z] = [
+                    swath.odom.pose.pose.orientation.w, 
+                    swath.odom.pose.pose.orientation.x, 
+                    swath.odom.pose.pose.orientation.y, 
+                    swath.odom.pose.pose.orientation.z
+            ]
+            _pitch, yaw = \
+                    utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+            delta_x = swath.odom.pose.pose.position.x - old_x
+            delta_y = swath.odom.pose.pose.position.y - old_y
+
+            delta_dist = sqrt(delta_x**2 + delta_y**2)
+            delta_yaw = abs(yaw - old_yaw)
+
+            if delta_yaw == 0:
+                q = 1
+            else:
+                l = delta_dist / tan(delta_yaw)
+
+                q = 0.5 * (tanh(k * ((l / ground_range) - 0.5)) + 1)
+
+            ground_range = (swath.altitude / 
+                tan(self.sonar.theta - self.sonar.alpha / 2))
+            
+            quality_indicators.append(q)
+            ground_ranges.append(ground_range)
+
+            if delta_yaw == 0:
+                q = 1
+            else:
+                l = delta_dist / tan(delta_yaw)
+                r = self.sonar.range
+
+                q = 0.5 * (tanh(k * ((l / r) - 0.5)) + 1)
+            
+            quality_indicators_old.append(q)
+
+            speed = sqrt(
+                swath.odom.twist.twist.linear.x**2 +
+                swath.odom.twist.twist.linear.y**2
+            )
+
+            old_x = swath.odom.pose.pose.position.x
+            old_y = swath.odom.pose.pose.position.y
+            old_yaw = yaw
+            current_distance += delta_dist
+
+            
+            distance_traveled.append(current_distance)
+            speeds.append(speed)    
+
+        return quality_indicators_old, quality_indicators, ground_ranges, distance_traveled, speeds
