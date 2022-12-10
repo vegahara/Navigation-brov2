@@ -45,7 +45,7 @@ class LandmarkDetector2D(Node):
                         ('n_samples', 1000),
                         ('range_sonar', 30),
                         ('tranducer_angle', pi/4),
-                        ('scan_lines_per_frame', 2999),
+                        ('scan_lines_per_frame', 3000),
                         ('processing_period', 0.001),
                         ('d_obj_min', 3.0),
                         ('min_height_shadow', 50),
@@ -140,21 +140,39 @@ class LandmarkDetector2D(Node):
             )
             self.fig.tight_layout()
 
-        # Plotting used for checking quality indicator 
+ 
+        self.plot_only_path = False
+        if self.plot_only_path:
+            self.fig, self.ax_path = plt.subplots(1, 1)
+
+        self.plot_only_sonar_im = False
+        if self.plot_only_sonar_im:
+            self.fig, \
+            (self.ax_sonar, self.ax_quality_indicator, 
+            self.ax_speed, self.ax_dummy, self.ax_qi_colorbar,
+            self.ax_speed_colorbar) = plt.subplots(
+                1, 6, 
+                gridspec_kw={'width_ratios': [10, 1, 1, 3.5, 3, 3]}
+            )
+            self.ax_dummy.axis('off')
+
         self.plot_path_for_quality = False
         if self.plot_path_for_quality:
             self.fig, \
             (self.ax_path, self.ax_sonar, 
-            self.ax_quality_indicator) = plt.subplots(
-                1, 3, 
-                sharey=False, 
-                gridspec_kw={'width_ratios': [14, 10, 1,]}
+            self.ax_quality_indicator, self.ax_speed,
+            self.ax_dummy, self.ax_qi_colorbar,
+            self.ax_speed_colorbar) = plt.subplots(
+                1, 7,  
+                gridspec_kw={'width_ratios': [26, 10, 1, 1, 3.5, 3, 3]} # Training data
+                # gridspec_kw={'width_ratios': [15, 10, 1, 1, 2.5, 3, 3]} # Test data
             )
+            self.ax_dummy.axis('off')
             self.divider = make_axes_locatable(self.ax_path)
-            self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.0, adjust_dirs=['right'])
-            self.divider.add_auto_adjustable_area(self.ax_sonar, pad = 0, adjust_dirs=['right'])
-            self.divider.add_auto_adjustable_area(self.ax_quality_indicator, pad = 0, adjust_dirs=['left'])
-            self.fig.tight_layout()
+            # Training data
+            self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.1, adjust_dirs=['right'])
+            # Test data
+            # self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.2, adjust_dirs=['right'])
 
         # Plot results
         self.plot_final_results = True
@@ -345,14 +363,21 @@ class LandmarkDetector2D(Node):
             )
 
         elif self.plot_path_for_quality:
-            self.plot_path(swaths, scanlines)
+            self.plot_path_full(swaths, scanlines, plot_color_bars = True, 
+            show_quality_ind = False)
 
         elif self.plot_final_results:
             self.plot_results(swaths, scanlines, shadows)
 
+        elif self.plot_only_path:
+            self.plot_path(swaths, show_quality_ind=False)
+
+        elif self.plot_only_sonar_im:
+            self.plot_sonar_im(swaths, scanlines, plot_color_bars = True)
+
         self.landmarks = shadows
 
-    def find_swath_properties(self, swaths, k = 4):
+    def find_swath_properties(self, swaths, k = 3):
 
         quality_indicators_old = []
         quality_indicators = []
@@ -416,6 +441,8 @@ class LandmarkDetector2D(Node):
                 l = delta_dist / tan(delta_yaw)
 
                 q = 0.5 * (tanh(k * ((l / ground_range) - 0.5)) + 1)
+
+                # = max(0, min(1, (l / ground_range - 0.3) / 0.7))
 
             ground_range = (swath.altitude / 
                 tan(self.sonar.theta - self.sonar.alpha / 2))
@@ -538,27 +565,11 @@ class LandmarkDetector2D(Node):
         self.fig.canvas.draw()
         input("Press key to continue")
 
-    def plot_path(self, swaths, scanlines, vmin = 0.6, vmax = 1.5):
+    def plot_path(self, swaths, show_quality_ind = True):
 
-        quality_indicators_old, quality_indicators, ground_ranges, \
-        distance_traveled, speeds = \
-            self.find_swath_properties(swaths)
-
-        # Invert to get better representation using summer colourmap
-        quality_indicators = [(1.0 - x) for x in quality_indicators]
-
-        quality_im = []
-        speed_im = []
-        width_speed_and_quality = 200
-
-        for i in range(width_speed_and_quality):
-            quality_im.append(quality_indicators)
-
-        quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
-
-        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
-            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["green","yellow","red"]))
-        )
+        _quality_indicators_old, quality_indicators, _ground_ranges, \
+        distance_traveled, _speeds = \
+            self.find_swath_properties(swaths) 
 
         x_coordinates = []
         y_coordinates = []
@@ -567,75 +578,337 @@ class LandmarkDetector2D(Node):
             x_coordinates.append(swath.odom.pose.pose.position.x)
             y_coordinates.append(swath.odom.pose.pose.position.y)
 
+        if show_quality_ind:
+            quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+                "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red", "yellow", "green"]))
+            )  
 
-        self.ax_path.scatter(x_coordinates,y_coordinates, 
-            c=quality_cmap(quality_indicators), edgecolor='none'
+            self.ax_path.scatter(x_coordinates,y_coordinates, 
+                c=quality_cmap(quality_indicators), edgecolor='none',
+                vmin=0.0, vmax=1.0
+            )
+
+        else:
+            self.ax_path.scatter(x_coordinates,y_coordinates, 
+                c='grey', edgecolor='none'
+            )
+
+        labels = []
+        locations = []
+
+        for i in range(0, len(distance_traveled), 500):
+            labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            locations.append(i)
+
+        for i, txt in zip(locations, labels):
+            self.ax_path.annotate(txt, (x_coordinates[i], y_coordinates[i]))
+            if show_quality_ind:
+                self.ax_path.scatter(
+                    x_coordinates[i], y_coordinates[i], c='k', edgecolor='none'
+                )
+            else:
+                self.ax_path.scatter(
+                    x_coordinates[i], y_coordinates[i], c='orange', edgecolor='none'
+                )
+
+        self.ax_path.set(
+            xlabel = 'x position',
+            ylabel = 'y positiosn'
+        )
+
+        self.ax_path.axis('equal')
+        self.ax_path.xaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
+        # self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(5))
+        self.ax_path.yaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
+        self.fig.tight_layout()
+
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+    def plot_sonar_im(self, swaths, scanlines, 
+       plot_color_bars = True, vmin = 0.6, vmax = 1.5):
+
+        quality_indicators_old, quality_indicators, ground_ranges, \
+        distance_traveled, speeds = \
+            self.find_swath_properties(swaths)  
+
+        quality_im = []
+        speed_im = []
+        width_bars = 200
+
+        for i in range(width_bars):
+            quality_im.append(quality_indicators)
+            speed_im.append(speeds)
+
+        quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
+        speed_im = np.transpose(np.array(speed_im, dtype = np.float64))
+
+        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red", "yellow", "green"]))
         )
         
         self.ax_sonar.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
         self.ax_quality_indicator.imshow(quality_im, cmap = quality_cmap, \
-            vmin = 0, vmax = 1)
+            vmin = 0.0, vmax = 1.0)
+        self.ax_speed.imshow(speed_im, cmap = 'winter', vmin=0.75, vmax=1.25)
 
-        self.ax_sonar.axhline(145, c='k', ls='--')
-        self.ax_sonar.axhline(780, c='k', ls='--')
-        self.ax_sonar.axhline(965, c='k', ls='--')
-        self.ax_sonar.axhline(1565, c='k', ls='--')
-        self.ax_sonar.axhline(1775, c='k', ls='--')
-        self.ax_sonar.axhline(2405, c='k', ls='--')
-        self.ax_sonar.axhline(2595, c='k', ls='--')                                                                      
 
-        # Trick to get last tick on sonar image
-        self.ax_quality_indicator.set_xticks([0.0])
-        self.ax_quality_indicator.set_xticklabels(['1000'])
+        if plot_color_bars:
+            qi_cb_im = np.linspace(1.0, 0.0, len(quality_indicators), dtype=np.float64)
+            s_cb_im = np.linspace(1.25, 0.75, len(speeds), dtype=np.float64)
+            qi_cb_im = np.tile(qi_cb_im,(width_bars, 1))
+            s_cb_im = np.tile(s_cb_im,(width_bars, 1))
+            qi_cb_im = np.transpose(qi_cb_im)
+            s_cb_im = np.transpose(s_cb_im)
 
-        ticks = [0.0, 500.0, 1000.0, 1500.0, 2000.0]
+            self.ax_qi_colorbar.imshow(qi_cb_im, cmap = quality_cmap, \
+                vmin = 0.0, vmax = 1.0)
+            self.ax_speed_colorbar.imshow(s_cb_im, cmap = 'winter', 
+                vmin=0.75, vmax=1.25)
+
+            locs = np.linspace(0,len(quality_indicators)-1, num=6, endpoint=True)
+            labels_qi_cb = []
+            labels_s_cb = []
+    
+            for i in locs:
+                if int(i) in range(len(quality_indicators)):
+                    t = qi_cb_im[int(i)][1]
+                    labels_qi_cb.append(('%.1f' %qi_cb_im[int(i)][1]))
+                    labels_s_cb.append(('%.2f' %s_cb_im[int(i)][1]))
+                else:
+                    labels_qi_cb.append('')
+                    labels_s_cb.append('')
+
+            self.ax_qi_colorbar.set_yticks(locs)
+            self.ax_speed_colorbar.set_yticks(locs)
+            self.ax_qi_colorbar.set_yticklabels(labels_qi_cb)
+            self.ax_speed_colorbar.set_yticklabels(labels_s_cb)
+            self.ax_qi_colorbar.yaxis.tick_right()
+            self.ax_speed_colorbar.yaxis.tick_right()
+            self.ax_qi_colorbar.set_xticks([])
+            self.ax_speed_colorbar.set_xticks([])
+            self.ax_qi_colorbar.margins(0)
+            self.ax_speed_colorbar.margins(0)
+      
+        else:
+            self.ax_qi_colorbar.remove()
+            self.ax_speed_colorbar.remove()
+            self.ax_dummy.remove
+
+        # self.ax_sonar.axhline(145, c='k', ls='--')
+        # self.ax_sonar.axhline(780, c='k', ls='--')
+        # self.ax_sonar.axhline(965, c='k', ls='--')
+        # self.ax_sonar.axhline(1565, c='k', ls='--')
+        # self.ax_sonar.axhline(1775, c='k', ls='--')
+        # self.ax_sonar.axhline(2405, c='k', ls='--')
+        # self.ax_sonar.axhline(2595, c='k', ls='--')                                                                      
+
+        ticks = [0.0, 500.0, 1000.0, 1500.0, 1999.0]
         labels = ['-1000', '-500', '0', '500', '1000']
 
         self.ax_sonar.set_xticks(ticks)
         self.ax_sonar.set_xticklabels(labels)
+        self.ax_quality_indicator.set_xticks([])
+        self.ax_speed.set_xticks([])
 
-        locs = self.ax_quality_indicator.get_yticks()
         labels = []
-    
-        for i in locs:
-            if i in range(len(distance_traveled)):
-                labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
-            else:
-                labels.append('')
+        locations = []
 
-        self.ax_quality_indicator.set_yticklabels(labels)
-        self.ax_quality_indicator.yaxis.tick_right()
+        for i in range(0, len(distance_traveled), 500):
+            labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            locations.append(i)
 
-        for i, txt in zip(locs, labels):
-            i = round(i)
-            if i in range(len(x_coordinates)):
-                self.ax_path.annotate(txt, (x_coordinates[i], y_coordinates[i]))
-                self.ax_path.scatter(
-                    x_coordinates[i], y_coordinates[i], c='k', edgecolor='none'
-                )
-
-        self.ax_path.xaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
-        self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(5))
-        self.ax_path.yaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
-
-        self.fig.tight_layout()
-
+        self.ax_quality_indicator.set_yticks([])
+        self.ax_sonar.set_yticks(locations)
+        self.ax_sonar.set_yticklabels(locations)
+        self.ax_speed.yaxis.tick_right()   
+        self.ax_speed.set_yticks(locations)
+        self.ax_speed.set_yticklabels(labels)
+      
         self.ax_sonar.set(
             xlabel='Across track',
             ylabel='Along track', 
         )
+
+        self.fig.subplots_adjust(wspace=0, hspace=0)
+        self.ax_sonar.margins(0)
+        self.ax_quality_indicator.margins(0)
+        self.ax_speed.margins(0)
+
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+
+    def plot_path_full(self, swaths, scanlines, plot_color_bars = True, 
+            show_quality_ind = True, vmin = 0.6, vmax = 1.5):
+
+        width_bars = 200
+        vmin_speed = 0.25
+        vmax_speed = 1.75
+
+        quality_indicators_old, quality_indicators, ground_ranges, \
+            distance_traveled, speeds = \
+            self.find_swath_properties(swaths)
+
+        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red", "yellow", "green"]))
+        )
+
+        # Plottting of sonar, quality indicator and speed
+        quality_im = []
+        speed_im = []
+
+        for i in range(width_bars):
+            quality_im.append(quality_indicators)
+            speed_im.append(speeds)
+
+        quality_im = np.transpose(np.array(quality_im, dtype = np.float64))
+        speed_im = np.transpose(np.array(speed_im, dtype = np.float64))
+        
+        self.ax_sonar.imshow(scanlines, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_quality_indicator.imshow(quality_im, cmap = quality_cmap, \
+            vmin = 0.0, vmax = 1.0)
+        self.ax_speed.imshow(speed_im, cmap = 'winter', vmin=vmin_speed, vmax=vmax_speed)
+
+        # self.ax_sonar.axhline(145, c='k', ls='--')
+        # self.ax_sonar.axhline(780, c='k', ls='--')
+        # self.ax_sonar.axhline(965, c='k', ls='--')
+        # self.ax_sonar.axhline(1565, c='k', ls='--')
+        # self.ax_sonar.axhline(1775, c='k', ls='--')
+        # self.ax_sonar.axhline(2405, c='k', ls='--')
+        # self.ax_sonar.axhline(2595, c='k', ls='--') 
+        # self.ax_sonar.axhline(3195, c='k', ls='--') 
+        # self.ax_sonar.axhline(3395, c='k', ls='--') 
+        # self.ax_sonar.axhline(4030, c='k', ls='--') 
+        # self.ax_sonar.axhline(4225, c='k', ls='--') 
+        # self.ax_sonar.axhline(4840, c='k', ls='--') 
+        # self.ax_sonar.axhline(4870, c='k', ls='--') 
+
+        labels = []
+        locations = []
+
+        for i in range(0, len(distance_traveled), 500):
+            labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            locations.append(i)
+
+        self.ax_sonar.set_yticks(locations)
+        self.ax_sonar.set_yticklabels(locations)  
+        self.ax_speed.set_yticks(locations)
+        self.ax_speed.set_yticklabels(labels)
+        self.ax_quality_indicator.set_yticks([])
+        self.ax_quality_indicator.set_xticks([])
+        self.ax_speed.set_xticks([])
+        self.ax_speed.yaxis.tick_right() 
+        self.ax_sonar.set_xticks([0.0, 500.0, 1000.0, 1500.0, 1999.0])
+        self.ax_sonar.set_xticklabels(['-1000', '-500', '0', '500', '1000'])
+ 
+        self.ax_sonar.set(xlabel='Across track', ylabel='Along track')
+
+        self.fig.subplots_adjust(wspace=0, hspace=0)
+        self.ax_sonar.margins(0)
+        self.ax_quality_indicator.margins(0)
+        self.ax_speed.margins(0) 
+
+        # Plotting of path
+        x_coordinates = []
+        y_coordinates = []
+
+        for swath in swaths:
+            x_coordinates.append(swath.odom.pose.pose.position.x)
+            y_coordinates.append(swath.odom.pose.pose.position.y)
+
+        if show_quality_ind:
+            quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+                "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red", "yellow", "green"]))
+            )  
+
+            self.ax_path.scatter(x_coordinates,y_coordinates, 
+                c=quality_cmap(quality_indicators), edgecolor='none',
+                vmin=0.0, vmax=1.0
+            )
+
+        else:
+            self.ax_path.scatter(x_coordinates,y_coordinates, 
+                edgecolor='none'
+            )
+        
+        labels = []
+        locations = []
+
+        for i in range(0, len(distance_traveled), 500):
+            labels.append(('%.2f' % distance_traveled[int(i)]) + ' m')
+            locations.append(i)
+
+        for i, txt in zip(locations, labels):
+            self.ax_path.annotate(txt, (x_coordinates[i], y_coordinates[i]))
+            if show_quality_ind:
+                self.ax_path.scatter(
+                    x_coordinates[i], y_coordinates[i], c='k', edgecolor='none'
+                )
+            else:
+                self.ax_path.scatter(
+                    x_coordinates[i], y_coordinates[i], c='orange', edgecolor='none'
+                )
 
         self.ax_path.set(
             xlabel = 'x position',
             ylabel = 'y position'
         )
 
-        self.fig.subplots_adjust(wspace=0)
-        self.ax_sonar.margins(0)
-        self.ax_quality_indicator.margins(0)
+        self.ax_path.axis('equal')
+        self.ax_path.xaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
+        self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(6)) # Training data
+        # self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(5)) # Test data
+        self.ax_path.yaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
 
-        plt.subplots_adjust(left=0.07, bottom=0.08, right=0.92, top=0.92, wspace=0, hspace=0)
-         
+        # Plotting of colorbars
+        if plot_color_bars:
+            qi_cb_im = np.linspace(1.0, 0.0, len(quality_indicators), dtype=np.float64)
+            s_cb_im = np.linspace(vmax_speed, vmin_speed, len(speeds), dtype=np.float64)
+            qi_cb_im = np.tile(qi_cb_im,(width_bars, 1))
+            s_cb_im = np.tile(s_cb_im,(width_bars, 1))
+            qi_cb_im = np.transpose(qi_cb_im)
+            s_cb_im = np.transpose(s_cb_im)
+
+            self.ax_qi_colorbar.imshow(qi_cb_im, cmap = quality_cmap, \
+                vmin = 0.0, vmax = 1.0)
+            self.ax_speed_colorbar.imshow(s_cb_im, cmap = 'winter', 
+                vmin=vmin_speed, vmax=vmax_speed)
+
+            locs = np.linspace(0,len(quality_indicators)-1, num=6, endpoint=True)
+            labels_qi_cb = []
+            labels_s_cb = []
+    
+            for i in locs:
+                if int(i) in range(len(quality_indicators)):
+                    t = qi_cb_im[int(i)][1]
+                    labels_qi_cb.append(('%.1f' %qi_cb_im[int(i)][1]))
+                    labels_s_cb.append(('%.2f' %s_cb_im[int(i)][1]))
+                else:
+                    labels_qi_cb.append('')
+                    labels_s_cb.append('')
+
+            self.ax_qi_colorbar.set_yticks(locs)
+            self.ax_speed_colorbar.set_yticks(locs)
+            self.ax_qi_colorbar.set_yticklabels(labels_qi_cb)
+            self.ax_speed_colorbar.set_yticklabels(labels_s_cb)
+            self.ax_qi_colorbar.yaxis.tick_right()
+            self.ax_speed_colorbar.yaxis.tick_right()
+            self.ax_qi_colorbar.set_xticks([])
+            self.ax_speed_colorbar.set_xticks([])
+            self.ax_qi_colorbar.margins(0)
+            self.ax_speed_colorbar.margins(0)
+      
+        else:
+            self.ax_qi_colorbar.remove()
+            self.ax_speed_colorbar.remove()
+            self.ax_dummy.remove()
+    
+        plt.subplots_adjust(left=0.09, right=0.98)
+        plt.subplots_adjust(bottom=0.20, top=0.83)
+     
         plt.pause(10e-5)
         self.fig.canvas.draw()
         input("Press key to continue")

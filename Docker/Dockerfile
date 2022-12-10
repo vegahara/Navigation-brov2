@@ -33,8 +33,9 @@ RUN python3 -m pip install -r /home/requirements.txt
 RUN jupyter nbextension enable --py --sys-prefix widgetsnbextension && \
     jupyter nbextension enable --py --sys-prefix jupyros
 
-# Install tk to be able to run matplotlib.pyplot
-RUN apt-get -y install python3-tk
+# Installs for matplotlib
+RUN apt-get -y install python3-tk texlive install dvipng \
+    texlive-latex-extra texlive-fonts-recommended cm-super
 
 # Install tmux
 RUN apt-get -y install tmux

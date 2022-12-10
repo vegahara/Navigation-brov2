@@ -2,6 +2,8 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 import matplotlib.colors as plt_colors
+import matplotlib.markers as plt_markers
+import matplotlib.text as plt_text
 from scipy.signal import find_peaks, peak_prominences, peak_widths
 from math import pi, floor, sqrt, tanh, tan, sin
 from typing import List
@@ -104,17 +106,21 @@ class LandmarkDetector1D(Node):
         )
 
         # For figure plotting
-        self.plot_1D = False
+        self.plot_1D = True
         self.plot_2D = False
-        self.plot_2D_only_scan_lines = True
+        self.plot_2D_only_scan_lines = False
         self.plot_2D_for_tuning = False
 
-        # Set fontsize for all images and plots
-        plt.rcParams.update({'font.size': 20})
+        # Set text settings
+        plt.rcParams.update({
+            'font.size': 20,
+            "text.usetex": False,
+            "font.family": "Bitstream Vera Sans",
+        })
 
         if self.plot_1D:
             self.fig = plt.figure() 
-            self.axes = self.fig.add_axes([0.05,0.05,0.9,0.9])
+            self.axes = self.fig.add_axes([0.07,0.07,0.9,0.9])
 
         if self.plot_2D:
             self.fig, \
@@ -234,14 +240,14 @@ class LandmarkDetector1D(Node):
         echo_prop.extend(echo_prop_stb)
 
         shadow_landmarks = self.extract_landmarks(
-            swath, shadow_prop, self.landmark_threshold.value
+            swath, shadow_prop, self.landmark_threshold.value, is_shadows=True
         )
         echo_landmarks = self.extract_landmarks(
-            swath, echo_prop, self.landmark_threshold.value
+            swath, echo_prop, self.landmark_threshold.value, is_shadows=False
         )
-        shadow_landmarks, echo_landmarks = self.filter_landmarks(
-            shadow_landmarks, echo_landmarks
-        )
+        # shadow_landmarks, echo_landmarks = self.filter_landmarks(
+        #     shadow_landmarks, echo_landmarks
+        # )
 
         if self.plot_2D or self.plot_2D_only_scan_lines:
 
@@ -269,7 +275,7 @@ class LandmarkDetector1D(Node):
                 self.plot_landmarks()
             
         if self.plot_1D:
-            self.plot_swath_and_landmarks(swath, echo_landmarks, shadow_landmarks)
+            self.plot_swath_and_landmarks(swath, echo_landmarks, shadow_landmarks, echo_prop_port)
             input('Press any key to continue')
 
         if self.plot_2D_for_tuning:
@@ -280,10 +286,10 @@ class LandmarkDetector1D(Node):
             self.swaths.append(swath)  
 
             shadow_landmarks = self.extract_landmarks(
-                swath, shadow_prop, self.threshold_1
+                swath, shadow_prop, self.threshold_1, is_shadows=True
             )
             echo_landmarks = self.extract_landmarks(
-                swath, echo_prop, self.threshold_1
+                swath, echo_prop, self.threshold_1, is_shadows=False
             )
             shadow_landmarks, echo_landmarks = self.filter_landmarks(
                 shadow_landmarks, echo_landmarks
@@ -292,10 +298,10 @@ class LandmarkDetector1D(Node):
             self.echo_buffer_1.append(echo_landmarks)
 
             shadow_landmarks = self.extract_landmarks(
-                swath, shadow_prop, self.threshold_2
+                swath, shadow_prop, self.threshold_2, is_shadows=True
             )
             echo_landmarks = self.extract_landmarks(
-                swath, echo_prop, self.threshold_2
+                swath, echo_prop, self.threshold_2, is_shadows=False
             )
             shadow_landmarks, echo_landmarks = self.filter_landmarks(
                 shadow_landmarks, echo_landmarks
@@ -304,10 +310,10 @@ class LandmarkDetector1D(Node):
             self.echo_buffer_2.append(echo_landmarks)
 
             shadow_landmarks = self.extract_landmarks(
-                swath, shadow_prop, self.threshold_3
+                swath, shadow_prop, self.threshold_3, is_shadows=True
             )
             echo_landmarks = self.extract_landmarks(
-                swath, echo_prop, self.threshold_3
+                swath, echo_prop, self.threshold_3, is_shadows=False
             )
             shadow_landmarks, echo_landmarks = self.filter_landmarks(
                 shadow_landmarks, echo_landmarks
@@ -330,7 +336,7 @@ class LandmarkDetector1D(Node):
         peaks, _ = find_peaks(swath) 
 
         # Remove first peak as it does not correspond to any landmark
-        peaks = np.delete(peaks, 0)
+        #peaks = np.delete(peaks, 0)
 
         prominences, left_bases, right_bases = peak_prominences(swath, peaks)
 
@@ -346,22 +352,62 @@ class LandmarkDetector1D(Node):
         return swath_properties
 
 
-    def extract_landmarks(self, swath: Swath, swath_properties, threshold):
+    def extract_landmarks(self, swath: Swath, swath_properties, threshold, is_shadows):
         n_bins = len(swath.swath_port) + len(swath.swath_stb)
         landmarks = [0] * n_bins
+
+        swath_array = []
+        swath_array.extend(swath.swath_port)
+        swath_array.extend(swath.swath_stb)
         
         for (peak, prominence, width) in swath_properties:
 
-            if (2 * width) / prominence < threshold:
+            # if (2 * width) / prominence < threshold:
+            if True:
                 self.shadow_landmarks.append(Landmark(
                     self.get_global_pos(swath, peak), 
                     width, 
                     prominence
                 ))
 
-                lower_index = max(peak - floor(width/2), 0)
-                higher_index = min(peak + floor(width/2), n_bins)
-                landmarks[lower_index:higher_index] = [1] * (higher_index - lower_index)
+                # print(swath_array[peak], swath_array[peak] + prominence / 2)
+                # input('Press any key to continue')
+
+                if is_shadows:
+                    for i in range(peak, n_bins + 1):
+                        if swath_array[i] >= swath_array[peak] + prominence / 2:
+                            if(abs(swath_array[i] - swath_array[peak] + prominence / 2)) < abs(swath_array[i-1] - swath_array[peak] + prominence / 2):
+                                higher_index = i
+                            else:
+                                higher_index = i-1
+                            break
+                    for i in range(peak, 0, -1):
+                        if swath_array[i] >= swath_array[peak] + prominence / 2:
+                            if(abs(swath_array[i] - swath_array[peak] + prominence / 2)) < abs(swath_array[i+1] - swath_array[peak] + prominence / 2):
+                                lower_index = i
+                            else:
+                                lower_index = i+1
+                            break
+                else:
+                    for i in range(peak, n_bins + 1):
+                        if swath_array[i] <= swath_array[peak] - prominence / 2:
+                            if(abs(swath_array[i] - swath_array[peak] + prominence / 2)) < abs(swath_array[i-1] - swath_array[peak] + prominence / 2):
+                                higher_index = i
+                            else:
+                                higher_index = i-1
+                            break
+                    for i in range(peak, 0, -1):
+                        if swath_array[i] <= swath_array[peak] - prominence / 2:
+                            if(abs(swath_array[i] - swath_array[peak] + prominence / 2)) < abs(swath_array[i+1] - swath_array[peak] + prominence / 2):
+                                lower_index = i
+                            else:
+                                lower_index = i+1
+                            break
+
+                lower_index = max(lower_index,0)
+                higher_index = min(higher_index, n_bins-1)
+
+                landmarks[lower_index:higher_index+1] = [1] * (higher_index - lower_index + 1)
                 
         return landmarks
 
@@ -497,6 +543,7 @@ class LandmarkDetector1D(Node):
           
 
     def plot_swath(self, ping, raw_swath: Swath, smoothed_swath: Swath):
+
         self.axes.cla()
         
         self.axes.plot(
@@ -531,7 +578,11 @@ class LandmarkDetector1D(Node):
         self.fig.canvas.draw()    
 
 
-    def plot_swath_and_landmarks(self, swath, echo_landmarks, shadow_landmarks):
+    def plot_swath_and_landmarks(self, swath, echo_landmarks, shadow_landmarks, echo_prop_port):
+
+        peak, prominence, width = echo_prop_port[-1]
+
+        print(peak, prominence, width)
 
         swath_array = []
         swath_array.extend(swath.swath_port)
@@ -557,21 +608,64 @@ class LandmarkDetector1D(Node):
         )
         self.axes.plot(
             range(-self.sonar.n_samples,self.sonar.n_samples), 
-            echo_landmarks, color='limegreen'
+            echo_landmarks, color='g'
         )
         self.axes.plot(
             range(-self.sonar.n_samples,self.sonar.n_samples), 
-            shadow_landmarks, color='magenta'
+            shadow_landmarks, color='m'
         )
-        self.axes.axvline(x=0, ymin=0, color='black', linestyle='dotted')
+        self.axes.plot(
+            peak - self.sonar.n_samples - 1, swath_array[peak], 
+            marker=plt_markers.CARETDOWN, color='black')
+        self.axes.vlines(
+            x=peak - self.sonar.n_samples - 1, 
+            ymax=swath_array[peak],
+            ymin=swath_array[peak] - prominence,
+            color='black',
+            linestyles='dotted'
+        )
+
+        xmin = 0
+        xmax = 0
+
+        for i in range(peak, self.sonar.n_samples):
+            if swath_array[i] <= swath_array[peak] - prominence / 2:
+                if(abs(swath_array[i] - swath_array[peak] + prominence / 2)) < abs(swath_array[i-1] - swath_array[peak] + prominence / 2):
+                    xmax = i - self.sonar.n_samples - 1
+                else:
+                    xmax = i - self.sonar.n_samples - 2
+                break
+        for i in range(peak, 0, -1):
+            if swath_array[i] <= swath_array[peak] - prominence / 2:
+                if(abs(swath_array[i] - swath_array[peak] + prominence / 2)) < abs(swath_array[i+1] - swath_array[peak] + prominence / 2):
+                    xmin = i - self.sonar.n_samples - 1
+                else:
+                    xmin = i - self.sonar.n_samples
+                break
+
+        self.axes.hlines(
+            y = swath_array[peak] - prominence / 2,
+            xmin=xmin,
+            xmax=xmax,
+            linestyles='dashed'
+        )
+
+        ticks = [-1000.0, -750.0, -500.0, -250.0, 0.0, 250.0, 500.0, 750.0, 999]
+        labels = ['-1000', '-750', '-500', '-250', '0', '250', '500', '750', '1000']
+        self.axes.set_xticks(ticks)
+        self.axes.set_xticklabels(labels)
 
         self.axes.legend(
-            ["Across-track signal", "Detected echo landmarks", "Detected shadow landmarks"], 
+            ["Swath", "Detected echoes", "Detected shadows", 'Peak', 'Prominence', 'Width'], 
             loc="upper right"
         )
 
+        self.axes.axvline(x=0, ymin=0, color='black', linestyle='dashdot')
+
+        self.axes.margins(x=0.0, y=0.05)
+
         self.axes.set(
-            xlabel='Bin #', 
+            xlabel='Across track', 
             ylabel='Echo return intesity'
         )
 
