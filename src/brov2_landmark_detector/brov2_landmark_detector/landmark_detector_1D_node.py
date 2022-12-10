@@ -54,7 +54,7 @@ class LandmarkDetector1D(Node):
 
         self.declare_parameters(namespace='',
             parameters=[('sonar_data_topic_name', 'sonar_processed'),
-                        ('landmark_detector_threshold', 1550),
+                        ('landmark_detector_threshold', 1450),
                         ('cubic_spl_smoothing_param', 1e-5),
                         ('max_landmarks_per_scan', 1.0),
                         ('processing_period', 0.0001),
@@ -106,17 +106,14 @@ class LandmarkDetector1D(Node):
         )
 
         # For figure plotting
-        self.plot_1D = True
+        self.plot_1D = False
         self.plot_2D = False
-        self.plot_2D_only_scan_lines = False
+        self.plot_2D_only_scan_lines = True
         self.plot_2D_for_tuning = False
 
         # Set text settings
-        plt.rcParams.update({
-            'font.size': 20,
-            "text.usetex": False,
-            "font.family": "Bitstream Vera Sans",
-        })
+        # Set fontsize for all images and plots
+        plt.rcParams.update({'font.size': 20})
 
         if self.plot_1D:
             self.fig = plt.figure() 
@@ -149,9 +146,9 @@ class LandmarkDetector1D(Node):
             self.shadow_buffer_2 = []
             self.echo_buffer_3 = []           
             self.shadow_buffer_3 = []
-            self.threshold_1 = 1500
-            self.threshold_2 = 1550
-            self.threshold_3 = 1600
+            self.threshold_1 = 16
+            self.threshold_2 = 17
+            self.threshold_3 = 18
 
             self.fig, \
             (self.ax_sonar, self.ax_sonar_threshold_1, 
@@ -336,7 +333,7 @@ class LandmarkDetector1D(Node):
         peaks, _ = find_peaks(swath) 
 
         # Remove first peak as it does not correspond to any landmark
-        #peaks = np.delete(peaks, 0)
+        peaks = np.delete(peaks, 0)
 
         prominences, left_bases, right_bases = peak_prominences(swath, peaks)
 
@@ -359,20 +356,18 @@ class LandmarkDetector1D(Node):
         swath_array = []
         swath_array.extend(swath.swath_port)
         swath_array.extend(swath.swath_stb)
+
+        lower_index = 0
+        higher_index = 0
         
         for (peak, prominence, width) in swath_properties:
 
-            # if (2 * width) / prominence < threshold:
-            if True:
+            if (2 * width) / prominence < threshold:
                 self.shadow_landmarks.append(Landmark(
                     self.get_global_pos(swath, peak), 
                     width, 
                     prominence
                 ))
-
-                # print(swath_array[peak], swath_array[peak] + prominence / 2)
-                # input('Press any key to continue')
-
                 if is_shadows:
                     for i in range(peak, n_bins + 1):
                         if swath_array[i] >= swath_array[peak] + prominence / 2:
@@ -474,6 +469,8 @@ class LandmarkDetector1D(Node):
 
         self.ax_dummy.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
         self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        # self.ax_dummy.imshow(self.swath_array_buffer, cmap='copper')
+        # self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper')
         self.ax_dummy.imshow(self.shadow_buffer, cmap='spring', vmax = 1)
         self.ax_dummy.imshow(self.echo_buffer, cmap='summer', vmax = 1)
         self.ax_sonar.set(
@@ -512,11 +509,10 @@ class LandmarkDetector1D(Node):
                 labels.append('')
 
         self.ax_dummy.set_yticklabels(labels)
-
-        self.fig.subplots_adjust(wspace=0)
         self.ax_sonar.margins(0)
 
-        plt.subplots_adjust(left=0.3, bottom=0.1, right=0.64, top=0.95, wspace=0, hspace=0)
+        plt.subplots_adjust(left=0.3, bottom=0.1, right=0.64, top=0.95) # Test data
+        # plt.subplots_adjust(left=0.37, bottom=0.1, right=0.58, top=0.95) # Training data
         
         plt.pause(10e-5)
         self.fig.canvas.draw()
@@ -580,6 +576,8 @@ class LandmarkDetector1D(Node):
 
     def plot_swath_and_landmarks(self, swath, echo_landmarks, shadow_landmarks, echo_prop_port):
 
+        linewidth = 3
+
         peak, prominence, width = echo_prop_port[-1]
 
         print(peak, prominence, width)
@@ -604,25 +602,26 @@ class LandmarkDetector1D(Node):
 
         self.axes.plot(
             range(-self.sonar.n_samples,self.sonar.n_samples), 
-            swath_array, color='black'
+            swath_array, color='black', lw=linewidth
         )
         self.axes.plot(
             range(-self.sonar.n_samples,self.sonar.n_samples), 
-            echo_landmarks, color='g'
+            echo_landmarks, color='g', lw=linewidth
         )
         self.axes.plot(
             range(-self.sonar.n_samples,self.sonar.n_samples), 
-            shadow_landmarks, color='m'
+            shadow_landmarks, color='m', lw = linewidth
         )
         self.axes.plot(
             peak - self.sonar.n_samples - 1, swath_array[peak], 
-            marker=plt_markers.CARETDOWN, color='black')
+            marker=plt_markers.CARETDOWN, color='black', lw = linewidth, markersize=20)
         self.axes.vlines(
             x=peak - self.sonar.n_samples - 1, 
             ymax=swath_array[peak],
             ymin=swath_array[peak] - prominence,
             color='black',
-            linestyles='dotted'
+            linestyles='dotted',
+            lw=3
         )
 
         xmin = 0
@@ -647,7 +646,8 @@ class LandmarkDetector1D(Node):
             y = swath_array[peak] - prominence / 2,
             xmin=xmin,
             xmax=xmax,
-            linestyles='dashed'
+            linestyles='dashed',
+            lw=linewidth
         )
 
         ticks = [-1000.0, -750.0, -500.0, -250.0, 0.0, 250.0, 500.0, 750.0, 999]
@@ -660,7 +660,7 @@ class LandmarkDetector1D(Node):
             loc="upper right"
         )
 
-        self.axes.axvline(x=0, ymin=0, color='black', linestyle='dashdot')
+        self.axes.axvline(x=0, ymin=0, color='black', linestyle='dashdot', lw=linewidth)
 
         self.axes.margins(x=0.0, y=0.05)
 
@@ -678,9 +678,6 @@ class LandmarkDetector1D(Node):
         quality_indicators_old, quality_indicators, ground_ranges, \
             distance_traveled, speeds = \
             self.find_swath_indicators(self.swaths)
-
-        # Invert to get better representation using summer colourmap
-        quality_indicators = [(1.0 - x) for x in quality_indicators]
 
         quality_im = []
         speed_im = []
@@ -701,21 +698,21 @@ class LandmarkDetector1D(Node):
         self.echo_buffer_2 = np.asarray(self.echo_buffer_2, dtype = np.float64)
         self.echo_buffer_3 = np.asarray(self.echo_buffer_3, dtype = np.float64)
 
-        str_el = cv.getStructuringElement(cv.MORPH_RECT, (10,10)) 
-        self.shadow_buffer_1 = cv.morphologyEx(self.shadow_buffer_1, cv.MORPH_CLOSE, str_el)
-        self.shadow_buffer_2 = cv.morphologyEx(self.shadow_buffer_2, cv.MORPH_CLOSE, str_el)
-        self.shadow_buffer_3 = cv.morphologyEx(self.shadow_buffer_3, cv.MORPH_CLOSE, str_el)
-        self.echo_buffer_1 = cv.morphologyEx(self.echo_buffer_1, cv.MORPH_CLOSE, str_el) 
-        self.echo_buffer_2 = cv.morphologyEx(self.echo_buffer_2, cv.MORPH_CLOSE, str_el) 
-        self.echo_buffer_3 = cv.morphologyEx(self.echo_buffer_3, cv.MORPH_CLOSE, str_el) 
+        # str_el = cv.getStructuringElement(cv.MORPH_RECT, (10,10)) 
+        # self.shadow_buffer_1 = cv.morphologyEx(self.shadow_buffer_1, cv.MORPH_CLOSE, str_el)
+        # self.shadow_buffer_2 = cv.morphologyEx(self.shadow_buffer_2, cv.MORPH_CLOSE, str_el)
+        # self.shadow_buffer_3 = cv.morphologyEx(self.shadow_buffer_3, cv.MORPH_CLOSE, str_el)
+        # self.echo_buffer_1 = cv.morphologyEx(self.echo_buffer_1, cv.MORPH_CLOSE, str_el) 
+        # self.echo_buffer_2 = cv.morphologyEx(self.echo_buffer_2, cv.MORPH_CLOSE, str_el) 
+        # self.echo_buffer_3 = cv.morphologyEx(self.echo_buffer_3, cv.MORPH_CLOSE, str_el) 
 
-        str_el = cv.getStructuringElement(cv.MORPH_RECT, (15,15)) 
-        self.shadow_buffer_1 = cv.morphologyEx(self.shadow_buffer_1, cv.MORPH_OPEN, str_el)
-        self.shadow_buffer_2 = cv.morphologyEx(self.shadow_buffer_2, cv.MORPH_OPEN, str_el)
-        self.shadow_buffer_3 = cv.morphologyEx(self.shadow_buffer_3, cv.MORPH_OPEN, str_el)
-        self.echo_buffer_1 = cv.morphologyEx(self.echo_buffer_1, cv.MORPH_OPEN, str_el) 
-        self.echo_buffer_2 = cv.morphologyEx(self.echo_buffer_2, cv.MORPH_OPEN, str_el) 
-        self.echo_buffer_3 = cv.morphologyEx(self.echo_buffer_3, cv.MORPH_OPEN, str_el) 
+        # str_el = cv.getStructuringElement(cv.MORPH_RECT, (15,15)) 
+        # self.shadow_buffer_1 = cv.morphologyEx(self.shadow_buffer_1, cv.MORPH_OPEN, str_el)
+        # self.shadow_buffer_2 = cv.morphologyEx(self.shadow_buffer_2, cv.MORPH_OPEN, str_el)
+        # self.shadow_buffer_3 = cv.morphologyEx(self.shadow_buffer_3, cv.MORPH_OPEN, str_el)
+        # self.echo_buffer_1 = cv.morphologyEx(self.echo_buffer_1, cv.MORPH_OPEN, str_el) 
+        # self.echo_buffer_2 = cv.morphologyEx(self.echo_buffer_2, cv.MORPH_OPEN, str_el) 
+        # self.echo_buffer_3 = cv.morphologyEx(self.echo_buffer_3, cv.MORPH_OPEN, str_el) 
 
         self.shadow_buffer_1[self.shadow_buffer_1 == 0] = np.nan
         self.shadow_buffer_2[self.shadow_buffer_2 == 0] = np.nan
@@ -724,27 +721,32 @@ class LandmarkDetector1D(Node):
         self.echo_buffer_2[self.echo_buffer_2 == 0] = np.nan
         self.echo_buffer_3[self.echo_buffer_3 == 0] = np.nan
 
-        self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        # self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar.imshow(self.swath_array_buffer, cmap='copper')
+        
+        # self.ax_sonar_threshold_1.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_1.imshow(self.swath_array_buffer, cmap='copper')
 
-        self.ax_sonar_threshold_1.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
         self.ax_sonar_threshold_1.imshow(self.shadow_buffer_1, cmap='spring', vmax = 1)
         self.ax_sonar_threshold_1.imshow(self.echo_buffer_1, cmap='summer', vmax = 1)
  
-        self.ax_sonar_threshold_2.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        # self.ax_sonar_threshold_2.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_2.imshow(self.swath_array_buffer, cmap='copper')
         self.ax_sonar_threshold_2.imshow(self.shadow_buffer_2, cmap='spring', vmax = 1)
         self.ax_sonar_threshold_2.imshow(self.echo_buffer_2, cmap='summer', vmax = 1)
 
-        self.ax_sonar_threshold_3.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        # self.ax_sonar_threshold_3.imshow(self.swath_array_buffer, cmap='copper', vmin = vmin, vmax = vmax)
+        self.ax_sonar_threshold_3.imshow(self.swath_array_buffer, cmap='copper')
         self.ax_sonar_threshold_3.imshow(self.shadow_buffer_3, cmap='spring', vmax = 1)
         self.ax_sonar_threshold_3.imshow(self.echo_buffer_3, cmap='summer', vmax = 1)
 
         quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
-            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["green","yellow","red"]))
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red","yellow","green"]))
         )
 
         self.ax_quality_indicator.imshow(quality_im, cmap = quality_cmap, \
             vmin = 0, vmax = 1)
-        self.ax_speed.imshow(speed_im, cmap = 'winter')
+        self.ax_speed.imshow(speed_im, cmap = 'winter', vmin=0.75, vmax=1.25)
 
         self.ax_sonar_threshold_1.set_yticks([])
         self.ax_sonar_threshold_2.set_yticks([])
