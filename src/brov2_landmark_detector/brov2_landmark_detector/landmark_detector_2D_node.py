@@ -1,6 +1,6 @@
 import numpy as np
 import cv2 as cv
-from math import pi, sqrt, tanh, tan, sin
+from math import pi, sqrt, tanh, tan, sin, cos, degrees
 import matplotlib.pyplot as plt
 import matplotlib.colors as plt_colors
 import matplotlib.ticker as tick
@@ -52,7 +52,7 @@ class LandmarkDetector2D(Node):
                         ('max_height_shadow', 150),
                         ('min_corr_area', 100),
                         ('bounding_box_fill_limit', 0.3),
-                        ('intensity_threshold', 0.90)]
+                        ('intensity_threshold', 0.85)]
         )
                       
         (sonar_data_topic_name, 
@@ -126,7 +126,7 @@ class LandmarkDetector2D(Node):
             self.fig.tight_layout()
 
         # Plotting used for tuning of intensity threshold
-        self.plot_for_tuning_threshold = True
+        self.plot_for_tuning_threshold = False
         if self.plot_for_tuning_threshold:
             self.fig, \
             (self.ax_sonar, self.ax_sonar_threshold_1, 
@@ -165,15 +165,12 @@ class LandmarkDetector2D(Node):
             self.ax_speed_colorbar) = plt.subplots(
                 1, 7,  
                 gridspec_kw={'width_ratios': [26, 10, 1, 1, 3.5, 3, 3]} # Training data
-                # gridspec_kw={'width_ratios': [15, 10, 1, 1, 2.5, 3, 3]} # Test data
+                # gridspec_kw={'width_ratios': [12, 10, 1, 1, 2.5, 3, 3]} # Test data
             )
             self.ax_dummy.axis('off')
             self.divider = make_axes_locatable(self.ax_path)
-            # Training data
             self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.1, adjust_dirs=['right'])
-            # Test data
-            # self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.2, adjust_dirs=['right'])
-
+           
         # Plot results
         self.plot_final_results = False
         if self.plot_final_results:
@@ -181,6 +178,11 @@ class LandmarkDetector2D(Node):
             self.ax_sonar = self.fig.add_subplot(111)
             self.ax_dummy = self.ax_sonar.twinx()
             self.fig.tight_layout()
+
+        self.plot_zoomed_qi = True
+        if self.plot_zoomed_qi:
+            self.fig = plt.figure()
+            self.ax_path_zoomed = self.fig.add_subplot(111)
 
         self.landmarks = None       # Containing all landmarks so far
         self.swath_buffer = []      # Buffer containing swaths to process
@@ -250,8 +252,8 @@ class LandmarkDetector2D(Node):
             cv.threshold(sonar_im, threshold, 1.0, cv.THRESH_BINARY_INV)
         shadows = shadows.astype(np.uint8)
 
-        # str_el = cv.getStructuringElement(cv.MORPH_RECT, (10,10)) 
-        # shadows = cv.morphologyEx(shadows, cv.MORPH_CLOSE, str_el) 
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (10,10)) 
+        shadows = cv.morphologyEx(shadows, cv.MORPH_CLOSE, str_el) 
 
         contours, _ = cv.findContours(shadows, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
 
@@ -363,8 +365,8 @@ class LandmarkDetector2D(Node):
             )
 
         elif self.plot_path_for_quality:
-            self.plot_path_full(swaths, scanlines, plot_color_bars = False, 
-            show_quality_ind = True)
+            self.plot_path_full(swaths, scanlines, plot_color_bars = True, 
+            show_quality_ind = False)
 
         elif self.plot_final_results:
             self.plot_results(swaths, scanlines, shadows)
@@ -374,6 +376,9 @@ class LandmarkDetector2D(Node):
 
         elif self.plot_only_sonar_im:
             self.plot_sonar_im(swaths, scanlines, plot_color_bars = True)
+
+        elif self.plot_zoomed_qi:
+            self.plot_zoomed_quality_indicators(swaths, start_index=50, end_index=250)
 
         self.landmarks = shadows
 
@@ -413,7 +418,7 @@ class LandmarkDetector2D(Node):
         ground_range = (swaths[0].altitude / 
             tan(self.sonar.theta - self.sonar.alpha / 2))
 
-        quality_indicators_old.append(1.0)
+        # quality_indicators_old.append(1.0)
         quality_indicators.append(1.0)
         distance_traveled.append(current_distance)
         speeds.append(speed)
@@ -436,7 +441,7 @@ class LandmarkDetector2D(Node):
             delta_yaw = abs(yaw - old_yaw)
 
             if delta_yaw == 0:
-                q = 1
+                q = 1.0
             else:
                 l = delta_dist / tan(delta_yaw)
 
@@ -446,6 +451,9 @@ class LandmarkDetector2D(Node):
 
             ground_range = (swath.altitude / 
                 tan(self.sonar.theta - self.sonar.alpha / 2))
+
+            # Trick to get l with out changing interface
+            quality_indicators_old.append(l)
             
             quality_indicators.append(q)
             ground_ranges.append(ground_range)
@@ -458,7 +466,7 @@ class LandmarkDetector2D(Node):
 
                 q = 0.5 * (tanh(k * ((l / r) - 0.5)) + 1)
             
-            quality_indicators_old.append(q)
+            # quality_indicators_old.append(q)
 
             speed = sqrt(
                 swath.odom.twist.twist.linear.x**2 +
@@ -613,7 +621,7 @@ class LandmarkDetector2D(Node):
 
         self.ax_path.set(
             xlabel = 'x position',
-            ylabel = 'y positiosn'
+            ylabel = 'y position'
         )
 
         self.ax_path.axis('equal')
@@ -772,19 +780,19 @@ class LandmarkDetector2D(Node):
             vmin = 0.0, vmax = 1.0)
         self.ax_speed.imshow(speed_im, cmap = 'winter', vmin=vmin_speed, vmax=vmax_speed)
 
-        self.ax_sonar.axhline(145, c='k', ls='--')
-        self.ax_sonar.axhline(780, c='k', ls='--')
-        self.ax_sonar.axhline(965, c='k', ls='--')
-        self.ax_sonar.axhline(1565, c='k', ls='--')
-        self.ax_sonar.axhline(1775, c='k', ls='--')
-        self.ax_sonar.axhline(2405, c='k', ls='--')
-        self.ax_sonar.axhline(2595, c='k', ls='--') 
-        self.ax_sonar.axhline(3195, c='k', ls='--') 
-        self.ax_sonar.axhline(3395, c='k', ls='--') 
-        self.ax_sonar.axhline(4030, c='k', ls='--') 
-        self.ax_sonar.axhline(4225, c='k', ls='--') 
-        self.ax_sonar.axhline(4840, c='k', ls='--') 
-        self.ax_sonar.axhline(4870, c='k', ls='--') 
+        # self.ax_sonar.axhline(145, c='k', ls='--')
+        # self.ax_sonar.axhline(780, c='k', ls='--')
+        # self.ax_sonar.axhline(965, c='k', ls='--')
+        # self.ax_sonar.axhline(1565, c='k', ls='--')
+        # self.ax_sonar.axhline(1775, c='k', ls='--')
+        # self.ax_sonar.axhline(2405, c='k', ls='--')
+        # self.ax_sonar.axhline(2595, c='k', ls='--') 
+        # self.ax_sonar.axhline(3195, c='k', ls='--') 
+        # self.ax_sonar.axhline(3395, c='k', ls='--') 
+        # self.ax_sonar.axhline(4030, c='k', ls='--') 
+        # self.ax_sonar.axhline(4225, c='k', ls='--') 
+        # self.ax_sonar.axhline(4840, c='k', ls='--') 
+        # self.ax_sonar.axhline(4870, c='k', ls='--') 
 
         labels = []
         locations = []
@@ -820,17 +828,13 @@ class LandmarkDetector2D(Node):
             y_coordinates.append(swath.odom.pose.pose.position.y)
 
         if show_quality_ind:
-            quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
-                "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red", "yellow", "green"]))
-            )  
-
-            self.ax_path.scatter(x_coordinates,y_coordinates, 
+            self.ax_path.scatter(y_coordinates, x_coordinates, 
                 c=quality_cmap(quality_indicators), edgecolor='none',
                 vmin=0.0, vmax=1.0
             )
 
         else:
-            self.ax_path.scatter(x_coordinates,y_coordinates, 
+            self.ax_path.scatter(y_coordinates, x_coordinates, 
                 edgecolor='none'
             )
         
@@ -842,25 +846,25 @@ class LandmarkDetector2D(Node):
             locations.append(i)
 
         for i, txt in zip(locations, labels):
-            self.ax_path.annotate(txt, (x_coordinates[i], y_coordinates[i]))
+            self.ax_path.annotate(txt, (y_coordinates[i], x_coordinates[i]), rotation=20)
             if show_quality_ind:
                 self.ax_path.scatter(
-                    x_coordinates[i], y_coordinates[i], c='k', edgecolor='none'
+                    y_coordinates[i], x_coordinates[i], c='k', edgecolor='none'
                 )
             else:
                 self.ax_path.scatter(
-                    x_coordinates[i], y_coordinates[i], c='orange', edgecolor='none'
+                    y_coordinates[i], x_coordinates[i], c='orange', edgecolor='none'
                 )
 
         self.ax_path.set(
-            xlabel = 'x position',
-            ylabel = 'y position'
+            xlabel = 'East',
+            ylabel = 'North'
         )
 
         self.ax_path.axis('equal')
         self.ax_path.xaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
         self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(6)) # Training data
-        # self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(5)) # Test data
+        # self.ax_path.xaxis.set_major_locator(tick.MaxNLocator(4)) # Test data
         self.ax_path.yaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
 
         # Plotting of colorbars
@@ -908,7 +912,7 @@ class LandmarkDetector2D(Node):
     
         plt.subplots_adjust(left=0.09, right=0.98)
         
-        # plt.subplots_adjust(bottom=0.20, top=0.83) # Only for test data
+        # plt.subplots_adjust(bottom=0.18, top=0.87) # Only for test data
      
         plt.pause(10e-5)
         self.fig.canvas.draw()
@@ -1256,6 +1260,93 @@ class LandmarkDetector2D(Node):
         self.fig.canvas.draw()
         input("Press key to continue")
 
+    def plot_zoomed_quality_indicators(self, swaths, start_index, end_index):
+
+        quality_cmap = plt_colors.LinearSegmentedColormap.from_list(
+            "quality_cmap", list(zip([0.0, 0.5, 1.0], ["red", "yellow", "green"]))
+        )
+
+        # Plotting of zoomed path
+        
+        swaths = swaths[start_index - 1:end_index + 1]
+
+        lengths, quality_indicators, ground_ranges, \
+        distance_traveled, speeds = \
+            self.find_swath_properties(swaths)
+
+        x_coordinates = []
+        y_coordinates = []
+        yaws = []
+
+        for swath in swaths:
+            [w,x,y,z] = [
+                swath.odom.pose.pose.orientation.w, 
+                swath.odom.pose.pose.orientation.x, 
+                swath.odom.pose.pose.orientation.y, 
+                swath.odom.pose.pose.orientation.z
+            ]
+            _pitch, yaw = \
+                    utility_functions.pitch_yaw_from_quaternion(w, x, y, z)
+            
+            yaws.append(yaw)
+            x_coordinates.append(swath.odom.pose.pose.position.x)
+            y_coordinates.append(swath.odom.pose.pose.position.y)
+
+        x_coordinates.pop(0)
+        y_coordinates.pop(0) 
+        ground_ranges.pop(0)
+        yaws.pop(0)
+        quality_indicators.pop(0)
+        i = start_index
+
+        for x, y, r_g, yaw, l, qi in zip(x_coordinates, y_coordinates, ground_ranges, yaws, lengths, quality_indicators):
+            self.ax_path_zoomed.scatter(y,x, 
+                c=quality_cmap(qi), edgecolor='none',
+                vmin=0.0, vmax=1.0
+            )
+
+            if i in [120, 121, 140, 141, 160, 161]:
+                self.ax_path_zoomed.plot(
+                    [y - r_g * sin(yaw + pi/2), y + r_g * sin(yaw + pi/2)],
+                    [x - r_g * cos(yaw + pi/2), x + r_g * cos(yaw + pi/2)],
+                    c='k'
+                )
+
+                if (l <= r_g) and (i in [121, 141, 161]):
+
+                    self.ax_path_zoomed.plot(
+                        y + l * sin(yaw + pi/2),
+                        x + l * cos(yaw + pi/2),
+                        c='b',
+                        marker='X',
+                        markersize=10
+                    )
+                if i in [141, 161]:
+                    text = 'QI:' + '%.2f' % qi
+                    self.ax_path_zoomed.annotate(text, (y+0.1, x + 0.16), rotation=degrees(-yaw))
+                if i == 121:
+                    text = 'QI:' + '%.2f' % qi
+                    self.ax_path_zoomed.annotate(text, (y, x + 0.2), rotation=degrees(-yaw))
+            i += 1
+
+        self.ax_path_zoomed.set(
+            xlabel = 'East',
+            ylabel = 'North'
+        )
+
+        self.ax_path_zoomed.axis('equal')
+        self.ax_path_zoomed.xaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
+        self.ax_path_zoomed.xaxis.set_major_locator(tick.MaxNLocator(6))
+        self.ax_path_zoomed.yaxis.set_major_formatter(tick.StrMethodFormatter('{x} m'))
+        self.ax_path_zoomed.yaxis.set_major_locator(tick.MaxNLocator(4))
+
+        plt.subplots_adjust(left=0.1, bottom=0.45, right=0.6, top=0.8, wspace=0, hspace=0)
+
+        plt.pause(10e-5)
+        self.fig.canvas.draw()
+        input("Press key to continue")
+
+        
 
 
           
