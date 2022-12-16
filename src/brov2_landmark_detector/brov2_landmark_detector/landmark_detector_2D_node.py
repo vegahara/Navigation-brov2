@@ -156,7 +156,7 @@ class LandmarkDetector2D(Node):
             )
             self.ax_dummy.axis('off')
 
-        self.plot_path_for_quality = False
+        self.plot_path_for_quality = True
         if self.plot_path_for_quality:
             self.fig, \
             (self.ax_path, self.ax_sonar, 
@@ -164,12 +164,12 @@ class LandmarkDetector2D(Node):
             self.ax_dummy, self.ax_qi_colorbar,
             self.ax_speed_colorbar) = plt.subplots(
                 1, 7,  
-                gridspec_kw={'width_ratios': [26, 10, 1, 1, 3.5, 3, 3]} # Training data
-                # gridspec_kw={'width_ratios': [12, 10, 1, 1, 2.5, 3, 3]} # Test data
+                gridspec_kw={'width_ratios': [24, 10, 1, 1, 3.5, 3, 3]} # Training data
+                # gridspec_kw={'width_ratios': [12, 10, 1, 1, 2.5, 2, 2.5]} # Test data
             )
             self.ax_dummy.axis('off')
             self.divider = make_axes_locatable(self.ax_path)
-            self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.1, adjust_dirs=['right'])
+            self.divider.add_auto_adjustable_area(self.ax_path, pad = 1.4, adjust_dirs=['right'])
            
         # Plot results
         self.plot_final_results = False
@@ -179,7 +179,7 @@ class LandmarkDetector2D(Node):
             self.ax_dummy = self.ax_sonar.twinx()
             self.fig.tight_layout()
 
-        self.plot_zoomed_qi = True
+        self.plot_zoomed_qi = False
         if self.plot_zoomed_qi:
             self.fig = plt.figure()
             self.ax_path_zoomed = self.fig.add_subplot(111)
@@ -889,7 +889,7 @@ class LandmarkDetector2D(Node):
                 if int(i) in range(len(quality_indicators)):
                     t = qi_cb_im[int(i)][1]
                     labels_qi_cb.append(('%.1f' %qi_cb_im[int(i)][1]))
-                    labels_s_cb.append(('%.2f' %s_cb_im[int(i)][1]))
+                    labels_s_cb.append(('%.2f' %s_cb_im[int(i)][1]) + ' m/s')
                 else:
                     labels_qi_cb.append('')
                     labels_s_cb.append('')
@@ -910,7 +910,7 @@ class LandmarkDetector2D(Node):
             self.ax_speed_colorbar.remove()
             self.ax_dummy.remove()
     
-        plt.subplots_adjust(left=0.09, right=0.98)
+        plt.subplots_adjust(left=0.09, right=0.94)
         
         # plt.subplots_adjust(bottom=0.18, top=0.87) # Only for test data
      

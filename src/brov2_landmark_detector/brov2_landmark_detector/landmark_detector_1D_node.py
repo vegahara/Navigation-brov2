@@ -106,9 +106,9 @@ class LandmarkDetector1D(Node):
         )
 
         # For figure plotting
-        self.plot_1D = False
+        self.plot_1D = True
         self.plot_2D = False
-        self.plot_2D_only_scan_lines = True
+        self.plot_2D_only_scan_lines = False
         self.plot_2D_for_tuning = False
 
         # Set text settings
@@ -666,7 +666,7 @@ class LandmarkDetector1D(Node):
 
         self.axes.set(
             xlabel='Across track', 
-            ylabel='Echo return intesity'
+            ylabel='Normalized echo return intesity'
         )
 
         plt.gca().axis('tight')
