@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'brov2_map_exe = brov2_map.map_node_main:main',
         ],
     },
 )

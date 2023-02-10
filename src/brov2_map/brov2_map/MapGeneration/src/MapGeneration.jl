@@ -2,4 +2,4 @@ module MapGeneration
 
 include("map_generation.jl")
 
-end # module
+end # module MapGeneration

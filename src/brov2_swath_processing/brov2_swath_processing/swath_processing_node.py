@@ -1,19 +1,12 @@
-import sys
-sys.path.append('utility_functions')
-import utility_functions
+import numpy as np
+import matplotlib.pyplot as plt
+from csaps import csaps
 
 from rclpy.node import Node
-from brov2_interfaces.msg import Sonar as SwathRaw
-from brov2_interfaces.msg import SonarProcessed as SwathProcessed
-from brov2_interfaces.msg import DVL
 from nav_msgs.msg import Odometry
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from scipy import interpolate
-from math import pi, floor, ceil
-from csaps import csaps
+from brov2_interfaces.msg import Sonar as SwathRaw
+from brov2_interfaces.msg import SwathProcessed
+from brov2_interfaces.msg import DVL
 
 
 class Swath:
@@ -25,7 +18,7 @@ class Swath:
 
 
 class SideScanSonar:
-    def __init__(self, n_bins=1000, range=30, theta=pi/4, alpha=pi/3):
+    def __init__(self, n_bins=1000, range=30, theta=np.pi/4, alpha=np.pi/3):
 
         self.n_bins = n_bins                    # Number of samples per active side and ping
         self.range = range                      # Sonar range in meters
@@ -44,12 +37,12 @@ class SwathProcessingNode(Node):
             ('altitude_topic_name', 'dvl/velocity_estimate'),
             ('odometry_topic_name', '/CSEI/observer/odom'),
             ('processing_period', 0.0001),
-            ('swath_normalizaton_smoothing_param', 1e-6),
-            ('swath_ground_range_resolution', 0.03),
+            ('swath_normalizaton_smoothing_param', 1e-8),
+            ('swath_ground_range_resolution', 0.01),
             ('sonar_n_bins', 1000),
             ('sonar_range', 30),
-            ('sonar_transducer_theta', pi/4),
-            ('sonar_transducer_alpha', pi/3),
+            ('sonar_transducer_theta', np.pi/4),
+            ('sonar_transducer_alpha', np.pi/3),
         ])
             
         (swath_raw_topic_name, swath_processed_topic_name, 
@@ -136,15 +129,15 @@ class SwathProcessingNode(Node):
         self.odom_initialized = True
 
 
-    def sonar_pub(self, swath):
+    def sonar_pub(self, swath:Swath):
         msg = SwathProcessed()
-        msg.header = self.current_odom.header
-        msg.odom = self.current_odom
-        msg.altitude = self.current_altitude
-        msg.data_stb = swath.swath_right
-        msg.data_port = swath.swath_left
+        msg.header = swath.odom.header
+        msg.odom = swath.odom
+        msg.altitude = swath.altitude
+        msg.data_stb = swath.data_stb
+        msg.data_port = swath.data_port
 
-        self.sonar_puplisher.publish(msg)
+        self.swath_processed_puplisher.publish(msg)
 
 
     ### HELPER FUNCTIONS
@@ -185,19 +178,18 @@ class SwathProcessingNode(Node):
         n_bins = self.sonar.n_bins
         _range_fbr, index_fbr = self.get_first_bottom_return(swath)
 
-        ground_ranges = np.append(
-            [np.nan] * index_fbr, 
-            np.array([np.sqrt((res*b)**2 - alt**2) for b in range(index_fbr,n_bins)])
-        )
-    
         x = np.linspace(
             0,
             self.sonar.range, 
             int(self.sonar.range / self.swath_ground_range_resolution)
         )
-
-        swath.data_stb = np.interp(x, ground_ranges, swath.data_stb, np.nan, np.nan)
-        swath.data_port = np.flip(np.interp(x, ground_ranges, np.flip(swath.data_port), np.nan, np.nan))
+        ground_ranges = np.array([np.sqrt((res*b)**2 - alt**2) for b in range(index_fbr,n_bins)])
+        swath.data_stb = np.interp(
+            x, ground_ranges, swath.data_stb[index_fbr:], np.nan, np.nan
+        )
+        swath.data_port = np.flip(np.interp(
+            x, ground_ranges, np.flip(swath.data_port[:-index_fbr]), np.nan, np.nan
+        ))
 
         return swath
         
@@ -216,21 +208,20 @@ class SwathProcessingNode(Node):
 
         swath = self.intensity_correction(swath)
 
-        #swath = self.blind_zone_removal(swath)
+        swath = self.blind_zone_removal(swath)
 
         swath = self.slant_range_correction(swath)
 
         self.unprocessed_swaths.pop(0)
 
-        self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
+        self.sonar_pub(swath)
 
-        if len(self.processed_swaths) > 2990: 
-            print(self.processed_swaths[0].shape)
-            sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
+        # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
 
-            print(sonar_im.shape)
+        # if len(self.processed_swaths) > 2990: 
+        #     sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
 
-            plt.imshow(sonar_im, cmap='copper', vmin=0.6,vmax=1.5)
-            plt.show()
+        #     plt.imshow(sonar_im, cmap='copper', vmin=0.6,vmax=1.5)
+        #     plt.show()
 
-            input('Press any key to continue')
+        #     input('Press any key to continue')

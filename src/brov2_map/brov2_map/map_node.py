@@ -3,8 +3,13 @@ from math import pi
 
 from rclpy.node import Node
 
-from brov2_interfaces.msg import SonarProcessed
+from brov2_interfaces.msg import SwathProcessed
 
+from julia.api import Julia
+jl = Julia(compiled_modules=False)
+jl.eval('import Pkg; Pkg.activate("src/brov2_map/brov2_map/MapGeneration")')
+jl.eval('import MapGeneration')
+generate_map = jl.eval('MapGeneration.MapGenerationFunctions.generate_map')
 
 
 class Map:
@@ -16,14 +21,14 @@ class Map:
 
         # Map consisting of processed intensity returns from the sonar. 
         self.intensity_map = np.zeros(
-            (n_rows / resolution, n_colums/resolution), 
+            (int(n_rows / resolution), int(n_colums/resolution)), 
             dtype=float
         )
 
         # Map where each cell corresponds to the pobability that the cell has been observed
         if probability_layer:
             self.probability_map = np.zeros(
-                (n_rows / resolution, n_colums/resolution), 
+                (int(n_rows / resolution), int(n_colums/resolution)), 
                 dtype=float
             )
 
@@ -50,12 +55,12 @@ class MapNode(Node):
 
         self.declare_parameters(
             namespace='',
-            parameters=[('processed_swath_topic', 'sonar_processed'),
+            parameters=[('processed_swath_topic', 'swath_processed'),
                         ('sonar_n_bins', 1000),
                         ('sonar_range', 30),
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
-                        ('swaths_per_map', 4890),
+                        ('swaths_per_map', 1),
                         ('processing_period', 0.001)]
         )
                       
@@ -77,9 +82,16 @@ class MapNode(Node):
             'processing_period',
         ])
 
+        self.processed_swath_sub = self.create_subscription(
+            SwathProcessed, 
+            processed_swath_topic.value, 
+            self.processed_swath_callback, 
+            qos_profile = 10
+        )
+
         self.sonar = SideScanSonar(
-            sonar_n_bins, sonar_range, 
-            sonar_transducer_theta, sonar_transducer_alpha
+            sonar_n_bins.value, sonar_range.value, 
+            sonar_transducer_theta.value, sonar_transducer_alpha.value
         )
 
         self.swath_buffer = []      # Buffer that contains all unprocessed corrected swaths
@@ -103,7 +115,7 @@ class MapNode(Node):
 
     def map_generation(self):
 
-        if len(self.swath_buffer) < self.swaths_per_map:
+        if len(self.swath_buffer) < self.swaths_per_map.value:
             return
         
-        # call julia
+        generate_map(1000, 1000, 1000, 0.01, 0, 0, self.swath_buffer, self.sonar.range, self.sonar.alpha)
