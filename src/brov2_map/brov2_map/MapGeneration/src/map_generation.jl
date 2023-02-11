@@ -37,6 +37,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         echo_intensity = 0.0
         probability = 1.0
         cell_valid = false
+        n_valid_swaths = 0
 
         for swath in swath_locals
 
@@ -49,8 +50,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
                 
                 if intensity_valid
                     cell_valid = true
-                    # echo_intensity += prob_swath * echo_intensity_swath
-                    echo_intensity = echo_intensity * probability * (1 - prob_swath) + prob_swath * echo_intensity_swath
+                    n_valid_swaths += 1
+                    echo_intensity += prob_swath * echo_intensity_swath
+                    # echo_intensity = echo_intensity * probability * (1 - prob_swath) + prob_swath * echo_intensity_swath
                     probability *= (1 - prob_swath)
                 end
             end
@@ -58,7 +60,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
         if cell_valid
             probability_map[row,col] = probability
-            echo_intensity_map[row,col] = echo_intensity
+            echo_intensity_map[row,col] = echo_intensity / n_valid_swaths
         end
 
         if col == n_colums
