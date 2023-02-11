@@ -38,7 +38,7 @@ class SwathProcessingNode(Node):
             ('odometry_topic_name', '/CSEI/observer/odom'),
             ('processing_period', 0.0001),
             ('swath_normalizaton_smoothing_param', 1e-8),
-            ('swath_ground_range_resolution', 0.01),
+            ('swath_ground_range_resolution', 0.03),
             ('sonar_n_bins', 1000),
             ('sonar_range', 30),
             ('sonar_transducer_theta', np.pi/4),

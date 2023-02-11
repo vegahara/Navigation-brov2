@@ -1,5 +1,11 @@
+import sys
+sys.path.append('utility_functions')
+import utility_functions
+
 import numpy as np
 from math import pi
+import matplotlib.pyplot as plt
+import matplotlib.ticker as tick
 
 from rclpy.node import Node
 
@@ -39,6 +45,7 @@ class Swath:
         self.odom = odom                # Odometry of the sonar upon swath arrival
         self.altitude = altitude        # Altitude of platform upon swath arrival
 
+
 class SideScanSonar:
     def __init__(self, n_bins=1000, range=30, theta=pi/4, alpha=pi/3):
 
@@ -60,7 +67,9 @@ class MapNode(Node):
                         ('sonar_range', 30),
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
-                        ('swaths_per_map', 1),
+                        ('swath_ground_range_resolution', 0.03),
+                        ('swaths_per_map', 100),
+                        ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
                       
@@ -69,7 +78,9 @@ class MapNode(Node):
         sonar_range,
         sonar_transducer_theta,
         sonar_transducer_alpha,
+        self.swath_ground_range_resolution,
         self.swaths_per_map,
+        self.map_resolution,
         processing_period,
         ) = \
         self.get_parameters([
@@ -78,7 +89,9 @@ class MapNode(Node):
             'sonar_range',
             'sonar_transducer_theta',
             'sonar_transducer_alpha',
+            'swath_ground_range_resolution',
             'swaths_per_map',
+            'map_resolution',
             'processing_period',
         ])
 
@@ -103,11 +116,23 @@ class MapNode(Node):
         self.get_logger().info("Landmark detector node initialized.")
 
     def processed_swath_callback(self, msg):
+        yaw = utility_functions.yaw_from_quaternion(
+            msg.odom.pose.pose.orientation.w, 
+            msg.odom.pose.pose.orientation.x, 
+            msg.odom.pose.pose.orientation.y, 
+            msg.odom.pose.pose.orientation.z
+        )
+
+        odom = [
+            msg.odom.pose.pose.position.x,
+            msg.odom.pose.pose.position.y,
+            yaw
+        ]
 
         swath = Swath(
-            data_port=msg.data_stb,
-            data_stb=msg.data_port,
-            odom=msg.odom,
+            data_port=msg.data_port,
+            data_stb=msg.data_stb,
+            odom=odom,
             altitude=msg.altitude
         )
 
@@ -117,5 +142,67 @@ class MapNode(Node):
 
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
+
+        min_x = self.swath_buffer[0].odom[0]
+        max_x = self.swath_buffer[0].odom[0]
+        min_y = self.swath_buffer[0].odom[1]
+        max_y = self.swath_buffer[0].odom[1]
+
+        for swath in self.swath_buffer:
+            min_x = min(min_x, swath.odom[0])
+            max_x = max(max_x, swath.odom[0])
+            min_y = min(min_y, swath.odom[1])
+            max_y = max(max_y, swath.odom[1])
+
+        map_origin_x = max_x + self.sonar.range
+        map_origin_y = min_y - self.sonar.range
+        n_rows = int(np.ceil(
+            (max_x - min_x + 2 * self.sonar.range) / self.map_resolution.value
+        ))
+        n_colums = int(np.ceil(
+            (max_y - min_y + 2 * self.sonar.range) / self.map_resolution.value
+        ))
         
-        generate_map(1000, 1000, 1000, 0.01, 0, 0, self.swath_buffer, self.sonar.range, self.sonar.alpha)
+        echo_map, prob_map = generate_map(
+            n_rows, n_colums, self.sonar.n_bins, 
+            self.map_resolution.value, map_origin_x, map_origin_y, 
+            self.swath_buffer, self.sonar.range, 0.5*pi/180, 
+            self.swath_ground_range_resolution.value
+        )
+
+        fig = plt.figure(figsize=(12, 6))
+
+        ax1 = fig.add_subplot(1, 2, 1)
+        ax1.imshow(echo_map, cmap='copper', vmin=0.0, vmax=1.5)
+
+        ax2 = fig.add_subplot(1, 2, 2)
+        ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
+
+        x_labels = []
+        x_locations = []
+        y_labels = []
+        y_locations = []
+
+        tick_distanse = 20 # In meters
+
+        for i in range(0, n_rows, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin_x - i * self.map_resolution.value
+            x_labels.append(('%.2f' % v) + ' m')
+            x_locations.append(i)
+        for i in range(0, n_colums, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin_y + i * self.map_resolution.value
+            y_labels.append(('%.2f' % v) + ' m')
+            y_locations.append(i)
+
+        ax1.set_yticks(x_locations)
+        ax1.set_yticklabels(x_labels)
+        ax1.set_xticks(y_locations)
+        ax1.set_xticklabels(y_labels)
+        ax2.set_yticks(x_locations)
+        ax2.set_yticklabels(x_labels)
+        ax2.set_xticks(y_locations)
+        ax2.set_xticklabels(y_labels)
+
+        plt.show()
+    
+        input('Press any key to continue')

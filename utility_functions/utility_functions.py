@@ -3,7 +3,7 @@ import math
 import numpy as np
 from numpy.linalg import norm
 
-def yaw_from_quaternion(quaternion):
+def yaw_from_quaternion(w, x, y, z):
     """Returns yaw (Euler angle - rotation around z counterclockwise) in radians.
 
     Args:
@@ -14,10 +14,8 @@ def yaw_from_quaternion(quaternion):
         yaw_z                          : Yaw element corresponding to quaternion
         """
 
-    q_w,q_x,q_y,q_z = quaternion.T[0]
-
-    t0 = +2.0 * (q_w * q_z + q_x * q_y)
-    t1 = +1.0 - 2.0 * (q_y * q_y + q_z * q_z)
+    t0 = +2.0 * (w * z + x * y)
+    t1 = +1.0 - 2.0 * (y * y + z * z)
     yaw_z = math.atan2(t0, t1)
 
     return yaw_z
