@@ -34,7 +34,7 @@ RUN jupyter nbextension enable --py --sys-prefix widgetsnbextension && \
     jupyter nbextension enable --py --sys-prefix jupyros
 
 # Installs for matplotlib
-RUN apt-get -y install python3-tk texlive install dvipng \
+RUN apt-get -y install python3-tk texlive dvipng \
     texlive-latex-extra texlive-fonts-recommended cm-super
 
 # Install tmux
