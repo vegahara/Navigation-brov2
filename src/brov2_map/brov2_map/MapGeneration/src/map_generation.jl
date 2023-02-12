@@ -3,6 +3,11 @@ module MapGenerationFunctions
 using StaticArrays
 using LinearAlgebra
 
+import NearestNeighbors
+import Distances
+import Statistics
+
+
 # Struct to represent the polar coordinates of each of the four corners, referenced to a local frame.
 # First element contains the range and second thetha.  
 struct CellLocal
@@ -68,7 +73,18 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         end
     end
 
-    return echo_intensity_map, probability_map
+    k = 4;
+    variance_ceiling = 0.05
+    max_distance = 0.5
+
+    intensity_mean, intensity_variance, echo_intensity_map = knn(
+        n_rows, n_colums, echo_intensity_map, 
+        map_resolution, k, variance_ceiling, max_distance
+    )
+
+    # return echo_intensity_map, probability_map
+    # return intensity_variance, probability_map
+    return echo_intensity_map, intensity_variance
 end
 
 function get_cell_global_coordinates(row, colum, map_resolution, map_origin)
@@ -98,45 +114,45 @@ end
 
 function is_cell_observed(cell_l, sonar_range, sonar_alpha)
 
-    min_r = min(
-        cell_l.tl_corner[1], 
-        cell_l.tr_corner[1], 
-        cell_l.br_corner[1], 
-        cell_l.bl_corner[1]
-    )
+    corners = [cell_l.tl_corner, cell_l.tr_corner, cell_l.br_corner, cell_l.bl_corner]
 
-    min_theta = minimum(
-        abs.([
-            cell_l.tl_corner[2] - pi/2, 
-            cell_l.tr_corner[2] - pi/2, 
-            cell_l.br_corner[2] - pi/2, 
-            cell_l.bl_corner[2] - pi/2,
-            cell_l.tl_corner[2] - pi*3/2, 
-            cell_l.tr_corner[2] - pi*3/2, 
-            cell_l.br_corner[2] - pi*3/2, 
-            cell_l.bl_corner[2] - pi*3/2
-        ])
-    )
+    # Correct based on left or right swath
+    corr = pi/2 + (corners[1][2] > pi)*pi
 
-    return min_r < sonar_range && min_theta < sonar_alpha
-end
+    min_r = corners[1][1]
+    min_theta = corners[1][2] - corr
+    max_theta = min_theta
+    abs_min_theta = abs(min_theta)
+
+    for i = 2:4
+        min_r = min(min_r, corners[i][1])
+        new_theta = corners[i][2] - corr
+        abs_min_theta = min(abs_min_theta, abs(new_theta))
+        min_theta = min(min_theta, new_theta)
+        max_theta = max(max_theta, new_theta)
+    end
+
+    # (max_theta > 0 && min_theta < 0) means that there is one corner on each side of the acoustic axis 
+    # hence, the cell is observed
+    # ((max_theta - min_theta) < pi) is to fix wrap around bug
+
+    return (min_r < sonar_range) && ((abs_min_theta < sonar_alpha) || (max_theta > 0 && min_theta < 0 && (max_theta - min_theta) < pi))
+end    
     
 
 function get_cell_probability_uniform(cell_l, sonar_alpha)
 
     corners = [cell_l.tl_corner, cell_l.tr_corner, cell_l.br_corner, cell_l.bl_corner]
-    correction = pi/2 + pi * (cell_l.tl_corner[2] > pi) * 2
 
-    min_theta = abs.(corners[1][2] - correction)
-    max_theta = abs.(corners[1][2] - correction)
+    min_theta = corners[1][2]
+    max_theta = corners[1][2]
 
     for i = 2:4
-        theta = abs(corners[i][2] - correction)
-        min_theta = min(min_theta, theta)
-        max_theta = max(max_theta, theta)
+        min_theta = min(min_theta, corners[i][2])
+        max_theta = max(max_theta, corners[i][2])
     end
 
-    if max_theta - min_theta > sonar_alpha
+    if (max_theta - min_theta) > sonar_alpha
         # Pixel is covering the whole beam and we cant have more than 1 in probability
         return 1
     else
@@ -160,7 +176,7 @@ function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
 
         # The corner is outside the swath range
         if higher_index > n_bins
-            continue
+            return NaN, false
         end
 
         if corner[2] > pi
@@ -178,6 +194,108 @@ function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
     end
 
     return pixel_intensity/4, true
+end
+
+function knn(n_rows, n_colums, echo_map, map_resolution, k, variance_ceiling, max_distance)
+    
+
+    # Make data vectors to use in kdtree
+    cell_coordinates = SVector{2,Float64}[]
+    intensity_values = []
+
+    for row=1:n_rows, col=1:n_colums
+        if !isnan(echo_map[row,col])
+            push!(cell_coordinates,SVector{2,Float64}(row*map_resolution,col*map_resolution))
+            push!(intensity_values,echo_map[row,col])
+        end
+    end
+
+    intensity_mean = fill(NaN,n_rows,n_colums)
+    intensity_variance = fill(NaN,n_rows,n_colums)
+
+    kdtree = NearestNeighbors.KDTree(cell_coordinates, Distances.Euclidean())
+
+    for row=1:n_rows, col=1:n_colums
+
+        idx, dist = NearestNeighbors.knn(
+            kdtree,
+            SVector{2,Float64}(row*map_resolution,col*map_resolution),
+            k
+        )
+        svals = [intensity_values[idx[ind]] for ind in 1:k if dist[ind] <= max_distance]
+
+        if svals != []
+            var = Statistics.var(svals)
+            if var <= variance_ceiling
+                intensity_mean[row,col] = Statistics.mean(svals)
+                intensity_variance[row,col] = var
+            else
+                intensity_mean[row,col] = Statistics.quantile!(svals, 10/100)
+                intensity_variance[row,col] = variance_ceiling
+            end
+        end
+    end
+    
+    # n_dim = max(n_rows,n_colums)
+    # padded_intensity_mean = fill(NaN, n_dim,n_dim)
+
+    # temp = copy(intensity_mean)
+    # padded_intensity_mean[1:n_rows,1:n_colums] = temp
+    # mask = isnan.(padded_intensity_mean)
+    # replace!(padded_intensity_mean, NaN=>0.0)
+
+    # filtered_image = anisotropic_diffusion(padded_intensity_mean, kappa=20, gamma=0.25, option=1)
+    # filtered_image[mask] .= NaN;
+
+    # return (intensity_mean, intensity_variance, filtered_image)
+    return (intensity_mean, intensity_variance, intensity_mean)
+end
+
+function anisotropic_diffusion(img; niter=1, kappa=50, gamma=0.1, voxelspacing=nothing, option=1)
+    # define conduction gradients functions
+    if option == 1
+        condgradient(delta, spacing) = exp(-(delta/kappa)^2.)/spacing
+    #elseif option == 2
+    #    condgradient(delta, spacing) = 1.0/(1.0+(delta/kappa)^2.0)/Float64(spacing)
+    #elseif option == 3
+    #    kappa_s = kappa * (2**0.5)
+    #    condgradient(delta, spacing) = ifelse(abs.(delta) .<= kappa_s, 0.5*((1.-(delta/kappa_s)**2.)**2.)/Float64(spacing), 0.0)
+    end
+    # initialize output array
+    out = img
+
+    # set default voxel spacing if not supplied
+    if voxelspacing == nothing
+        voxelspacing = ones(Float64, length(size(out)))
+    end
+    # initialize some internal variables
+    deltas = [zeros(Float64,size(out)) for k ∈ 1:length(size(out))]
+
+    for _k ∈ 1:niter
+
+        # calculate the diffs
+        for i ∈ 1:length(size(out))
+            slicer = []
+            for j ∈ 1:length(size(out))
+                append!(slicer,j==i ? [[1:size(out)[j]-1...]] : [[1:size(out)[j]...]])
+            end
+            deltas[i][slicer...] = diff(out,dims=i)
+        end
+        # update matrices
+        matrices = [condgradient(deltas[i], voxelspacing[i]) * deltas[i] for i ∈ 1:length(deltas)]
+        # subtract a copy that has been shifted ('Up/North/West' in 3D case) by one
+        # pixel. Don't as questions. just do it. trust me.
+        for i ∈ 1:length(size(out))
+            slicer = []
+            for j ∈ 1:length(size(out))
+                append!(slicer,j==i ? [[2:size(out)[j]...]] : [[1:size(out)[j]...]])
+            end
+            matrices[i][slicer...] = diff(matrices[i],dims=i)
+        end
+        # update the image
+        out = out + gamma * sum(matrices)
+    end
+    return out
 end
 
 end

@@ -68,7 +68,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 100),
+                        ('swaths_per_map', 200),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -130,8 +130,8 @@ class MapNode(Node):
         ]
 
         swath = Swath(
-            data_port=msg.data_port,
-            data_stb=msg.data_stb,
+            data_stb=np.flip(msg.data_port),
+            data_port=np.flip(msg.data_stb),
             odom=odom,
             altitude=msg.altitude
         )
@@ -142,6 +142,8 @@ class MapNode(Node):
 
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
+
+        # self.swath_buffer = self.swath_buffer[200:750]
 
         min_x = self.swath_buffer[0].odom[0]
         max_x = self.swath_buffer[0].odom[0]
@@ -176,7 +178,10 @@ class MapNode(Node):
         ax1.imshow(echo_map, cmap='copper', vmin=0.0, vmax=1.5)
 
         ax2 = fig.add_subplot(1, 2, 2)
-        ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
+        #For probability map
+        # ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
+        # For variance map
+        ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=0.05)
 
         x_labels = []
         x_locations = []
