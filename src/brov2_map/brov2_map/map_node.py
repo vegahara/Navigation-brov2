@@ -68,7 +68,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 1000),
+                        ('swaths_per_map', 350),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -116,7 +116,7 @@ class MapNode(Node):
         self.get_logger().info("Landmark detector node initialized.")
 
     def processed_swath_callback(self, msg):
-        yaw = utility_functions.yaw_from_quaternion(
+        pitch, yaw = utility_functions.pitch_yaw_from_quaternion(
             msg.odom.pose.pose.orientation.w, 
             msg.odom.pose.pose.orientation.x, 
             msg.odom.pose.pose.orientation.y, 
@@ -126,6 +126,8 @@ class MapNode(Node):
         odom = [
             msg.odom.pose.pose.position.x,
             msg.odom.pose.pose.position.y,
+            0, # We dont use roll in map generation
+            pitch,
             yaw
         ]
 
@@ -143,7 +145,7 @@ class MapNode(Node):
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
 
-        self.swath_buffer = self.swath_buffer[500:800]
+        self.swath_buffer = self.swath_buffer[150:350]
 
         min_x = self.swath_buffer[0].odom[0]
         max_x = self.swath_buffer[0].odom[0]
@@ -179,9 +181,9 @@ class MapNode(Node):
 
         ax2 = fig.add_subplot(1, 2, 2)
         #For probability map
-        #ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
+        ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
         # For variance map
-        ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=5)
+        #ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=5)
 
         x_labels = []
         x_locations = []

@@ -20,7 +20,7 @@ end
 struct Swath
     data_port
     data_stb
-    odom::SVector{3,Float64}
+    odom::SVector{5,Float64} #(x,y,roll,pitch,yaw)
     altitude::Float64
 end
 
@@ -33,7 +33,12 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     swath_locals = [Swath(
         swath.data_port, 
         swath.data_stb, 
-        SVector{3,Float64}(swath.odom[1],swath.odom[2],swath.odom[3]),
+        SVector{5,Float64}(
+            swath.odom[1]+swath.altitude*sin(swath.odom[4])*cos(swath.odom[5]), # Pich correction
+            swath.odom[2]+swath.altitude*sin(swath.odom[4])*sin(swath.odom[5]), # Pich correction
+            swath.odom[3],
+            swath.odom[4],
+            swath.odom[5]),
         float(swath.altitude)) 
         for swath in swaths]
 
@@ -86,9 +91,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         map_resolution, k, variance_ceiling, max_distance
     )
 
-    # return echo_intensity_map, probability_map
+    return echo_intensity_map, probability_map
     # return intensity_variance, probability_map
-    return echo_intensity_map, intensity_variance
+    # return echo_intensity_map, intensity_variance
 end
 
 function get_cell_global_coordinates(row, colum, map_resolution, map_origin)
@@ -110,7 +115,7 @@ function get_cell_coordinates(cell_global, local_frame, map_resolution)
     n3 = norm(v3)
     n4 = norm(v4)
 
-    a = rem2pi.(atan.([v1[2], v2[2], v3[2], v4[2]], [v1[1], v2[1], v3[1], v4[1]]) .- local_frame[3], RoundDown)
+    a = rem2pi.(atan.([v1[2], v2[2], v3[2], v4[2]], [v1[1], v2[1], v3[1], v4[1]]) .- local_frame[5], RoundDown)
 
     return CellLocal(SVector(n1, a[1]), SVector(n2, a[2]), SVector(n3, a[3]), SVector(n4, a[4]))
 end
