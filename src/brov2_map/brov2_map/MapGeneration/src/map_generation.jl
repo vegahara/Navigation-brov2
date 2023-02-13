@@ -39,10 +39,10 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
     for row=1:n_rows, col=1:n_colums
         cell_global = get_cell_global_coordinates(row,col,map_resolution,map_origin)
-        echo_intensity = 0.0
+        echo_intensities = []
+        swath_probabilities = []
         probability = 1.0
-        cell_valid = false
-        n_valid_swaths = 0
+        cell_observed = false
 
         for swath in swath_locals
 
@@ -51,21 +51,24 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
             if is_cell_observed(cell_l, sonar_range, sonar_alpha)
 
                 prob_swath = get_cell_probability_uniform(cell_l, sonar_alpha)
-                echo_intensity_swath, intensity_valid = get_cell_echo_intensity(cell_l, swath, swath_ground_resolution, n_bins)
+                echo_intensity_swath = get_cell_echo_intensity(cell_l, swath, swath_ground_resolution, n_bins)
                 
-                if intensity_valid
-                    cell_valid = true
-                    n_valid_swaths += 1
-                    echo_intensity += prob_swath * echo_intensity_swath
-                    # echo_intensity = echo_intensity * probability * (1 - prob_swath) + prob_swath * echo_intensity_swath
+                if !isnan(echo_intensity_swath)
+                    cell_observed = true
+
+                    push!(echo_intensities, echo_intensity_swath)
+                    push!(swath_probabilities, prob_swath)
+                
                     probability *= (1 - prob_swath)
                 end
+
             end
         end
 
-        if cell_valid
+        if cell_observed
+            normalized_swath_probabilities = swath_probabilities ./ sum(swath_probabilities)
             probability_map[row,col] = probability
-            echo_intensity_map[row,col] = echo_intensity / n_valid_swaths
+            echo_intensity_map[row,col] = sum(normalized_swath_probabilities .* echo_intensities)
         end
 
         if col == n_colums
@@ -74,7 +77,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     end
 
     k = 4;
-    variance_ceiling = 0.05
+    # variance_ceiling = 0.05
+    variance_ceiling = 5
     max_distance = 0.5
 
     intensity_mean, intensity_variance, echo_intensity_map = knn(
@@ -164,6 +168,7 @@ end
 function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
 
     pixel_intensity = 0
+    valid_corners = 0
 
     for f in fieldnames(typeof(cell_l))
         corner = getfield(cell_l,f)
@@ -176,7 +181,7 @@ function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
 
         # The corner is outside the swath range
         if higher_index > n_bins
-            return NaN, false
+            continue
         end
 
         if corner[2] > pi
@@ -185,15 +190,17 @@ function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
             measure_intensity = w1*swath.data_port[1+n_bins-higher_index] + w2*swath.data_port[1+n_bins-lower_index]
         end
 
-        # Do not use pixel if one of the corners evaluate to NaN
+        # Do not use corner if it evaluate to NaN
         if measure_intensity === NaN
-            return NaN, false
+            continue
         end
 
         pixel_intensity += measure_intensity
+        valid_corners += 1
+
     end
 
-    return pixel_intensity/4, true
+    return pixel_intensity/valid_corners
 end
 
 function knn(n_rows, n_colums, echo_map, map_resolution, k, variance_ceiling, max_distance)

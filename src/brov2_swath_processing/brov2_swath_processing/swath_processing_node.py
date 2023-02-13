@@ -37,7 +37,7 @@ class SwathProcessingNode(Node):
             ('altitude_topic_name', 'dvl/velocity_estimate'),
             ('odometry_topic_name', '/CSEI/observer/odom'),
             ('processing_period', 0.0001),
-            ('swath_normalizaton_smoothing_param', 1e-8),
+            ('swath_normalizaton_smoothing_param', 1e-6),
             ('swath_ground_range_resolution', 0.03),
             ('sonar_n_bins', 1000),
             ('sonar_range', 30),
