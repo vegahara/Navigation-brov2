@@ -34,8 +34,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         swath.data_port, 
         swath.data_stb, 
         SVector{5,Float64}(
-            swath.odom[1]+swath.altitude*sin(swath.odom[4])*cos(swath.odom[5]), # Pich correction
-            swath.odom[2]+swath.altitude*sin(swath.odom[4])*sin(swath.odom[5]), # Pich correction
+            swath.odom[1]+swath.altitude*sin(swath.odom[4])*cos(swath.odom[5]), # Pitch correction
+            swath.odom[2]+swath.altitude*sin(swath.odom[4])*sin(swath.odom[5]), # Pitch correction
             swath.odom[3],
             swath.odom[4],
             swath.odom[5]),

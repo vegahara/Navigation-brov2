@@ -32,7 +32,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 350),
+                        ('swaths_per_map', 1500),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -110,7 +110,7 @@ class MapNode(Node):
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
 
-        self.swath_buffer = self.swath_buffer[150:350]
+        # self.swath_buffer = self.swath_buffer[150:350]
 
         min_x = self.swath_buffer[0].odom[0]
         max_x = self.swath_buffer[0].odom[0]

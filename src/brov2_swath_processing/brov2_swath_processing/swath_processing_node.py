@@ -31,6 +31,9 @@ class SwathProcessingNode(Node):
             ('sonar_range', 30),
             ('sonar_transducer_theta', np.pi/4),
             ('sonar_transducer_alpha', np.pi/3),
+            ('sonar_x_offset', 0.2),
+            ('sonar_y_offset', 0.105),
+            ('sonar_z_offset', 0.0)
         ])
             
         (swath_raw_topic_name, swath_processed_topic_name, 
@@ -38,8 +41,9 @@ class SwathProcessingNode(Node):
         processing_period, swath_normalizaton_smoothing_param,
         swath_ground_range_resolution,
         sonar_n_bins, sonar_range, 
-        sonar_transducer_theta,
-        sonar_transducer_alpha) = self.get_parameters([
+        sonar_transducer_theta, sonar_transducer_alpha,
+        sonar_x_offset, sonar_y_offset,
+        sonar_z_offset) = self.get_parameters([
             'swath_raw_topic_name',
             'swath_processed_topic_name', 
             'altitude_topic_name',
@@ -50,7 +54,10 @@ class SwathProcessingNode(Node):
             'sonar_n_bins',
             'sonar_range',
             'sonar_transducer_theta',
-            'sonar_transducer_alpha'
+            'sonar_transducer_alpha',
+            'sonar_x_offset',
+            'sonar_y_offset',
+            'sonar_z_offset'
         ])
 
         # Publishers and subscribers
@@ -76,7 +83,8 @@ class SwathProcessingNode(Node):
         self.processed_swaths = []
         self.sonar = SideScanSonar(
             sonar_n_bins.value, sonar_range.value,
-            sonar_transducer_theta.value,sonar_transducer_alpha.value
+            sonar_transducer_theta.value,sonar_transducer_alpha.value,
+            sonar_x_offset.value, sonar_y_offset.value, sonar_z_offset.value
         )
 
         # Number of times we try to interpolate the pose for the newest swath before it gets discarded
@@ -124,11 +132,34 @@ class SwathProcessingNode(Node):
 
 
     ### HELPER FUNCTIONS
-    def get_first_bottom_return(self, swath:Swath):
-        range_fbr =  swath.altitude / np.sin(self.sonar.theta + self.sonar.alpha/2)
-        bin_number_fbr = int(np.floor_divide(range_fbr, self.sonar.slant_resolution))
+    def get_first_bottom_returns(self, swath:Swath):
+        roll, _pitch, _yaw = self.get_roll_pitch_yaw(swath)
+        corr_alt_port = swath.altitude * np.cos(roll) + self.sonar.y_offset * np.sin(roll)
+        corr_alt_stb = swath.altitude * np.cos(roll) - self.sonar.y_offset * np.sin(roll)
 
-        return range_fbr, bin_number_fbr
+        range_fbr_port = \
+            corr_alt_port / np.sin(self.sonar.theta + self.sonar.alpha/2 - roll) \
+            - self.sonar.z_offset
+        range_fbr_stb = \
+            corr_alt_stb / np.sin(self.sonar.theta + self.sonar.alpha/2 + roll) \
+            - self.sonar.z_offset 
+
+        bin_number_fbr_port = int(np.floor_divide(range_fbr_port, self.sonar.slant_resolution))
+        bin_number_fbr_stb = int(np.floor_divide(range_fbr_stb, self.sonar.slant_resolution))
+
+        return range_fbr_port, range_fbr_stb, bin_number_fbr_port, bin_number_fbr_stb
+
+
+    def get_roll_pitch_yaw(self, swath:Swath):
+        r = R.from_quat([
+            swath.odom.pose.pose.orientation.x,
+            swath.odom.pose.pose.orientation.y,
+            swath.odom.pose.pose.orientation.z,
+            swath.odom.pose.pose.orientation.w
+        ])
+        [yaw, pitch, roll] = r.as_euler('zyx')
+
+        return roll, pitch, yaw
 
 
     ### DATA PROCESSING FUNCTIONS
@@ -247,33 +278,43 @@ class SwathProcessingNode(Node):
 
 
     def blind_zone_removal(self, swath:Swath) -> Swath:
-        range_fbr, index_fbr = self.get_first_bottom_return(swath)
+        _r_port, _r_stb, index_fbr_port, index_fbr_stb = self.get_first_bottom_returns(swath)
 
-        swath.data_stb[:index_fbr] = [np.nan] * index_fbr
-        swath.data_port[-index_fbr:] = [np.nan] * index_fbr
+        swath.data_stb[:index_fbr_stb] = [np.nan] * index_fbr_stb
+        swath.data_port[-index_fbr_port:] = [np.nan] * index_fbr_port
 
         return swath
 
 
     def slant_range_correction(self, swath:Swath) -> Swath:
         # Variation of Burguera et al. 2016, Algorithm 1
+        roll, _pitch, _yaw = self.get_roll_pitch_yaw(swath)
 
         res = self.sonar.slant_resolution
-        alt = swath.altitude
+        horisontal_y_offset = self.sonar.y_offset * np.cos(roll)
+        corr_alt_port = swath.altitude * np.cos(roll) + self.sonar.y_offset * np.sin(roll)
+        corr_alt_stb = swath.altitude * np.cos(roll) - self.sonar.y_offset * np.sin(roll)
         n_bins = self.sonar.n_bins
-        _range_fbr, index_fbr = self.get_first_bottom_return(swath)
+        _r_port, _r_stb, index_fbr_port, index_fbr_stb = self.get_first_bottom_returns(swath)
 
         x = np.linspace(
             0,
             self.sonar.range, 
             int(self.sonar.range / self.swath_ground_range_resolution)
         )
-        ground_ranges = np.array([np.sqrt((res*b)**2 - alt**2) for b in range(index_fbr,n_bins)])
+
+        ground_ranges_stb = np.array([
+            horisontal_y_offset + np.sqrt((res*b)**2 - corr_alt_stb**2) for b in range(index_fbr_stb,n_bins)
+        ])
+        ground_ranges_port = np.array([
+            horisontal_y_offset + np.sqrt((res*b)**2 - corr_alt_port**2) for b in range(index_fbr_port,n_bins)
+        ])
+
         swath.data_stb = np.interp(
-            x, ground_ranges, swath.data_stb[index_fbr:], np.nan, np.nan
+            x, ground_ranges_stb, swath.data_stb[index_fbr_stb:], np.nan, np.nan
         )
         swath.data_port = np.flip(np.interp(
-            x, ground_ranges, np.flip(swath.data_port[:-index_fbr]), np.nan, np.nan
+            x, ground_ranges_port, np.flip(swath.data_port[:-index_fbr_port]), np.nan, np.nan
         ))
 
         return swath
@@ -297,8 +338,8 @@ class SwathProcessingNode(Node):
         else:
             self.n_tries_interpolating_swath = 0
 
-        range_fbr, _index_fbr = self.get_first_bottom_return(self.unprocessed_swaths[0])
-        if  range_fbr > self.sonar.range:
+        range_fbr_port, range_fbr_stb, _b_port, _b_stb = self.get_first_bottom_returns(self.unprocessed_swaths[0])
+        if  range_fbr_port > self.sonar.range or range_fbr_stb > self.sonar.range:
             self.unprocessed_swaths.pop(0)
             return
 

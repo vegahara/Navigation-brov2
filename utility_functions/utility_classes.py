@@ -11,13 +11,16 @@ class Swath:
 
 
 class SideScanSonar:
-    def __init__(self, n_bins=1000, range=30, theta=np.pi/4, alpha=np.pi/3):
+    def __init__(self, n_bins=1000, range=30, theta=np.pi/4, alpha=np.pi/3, x_offset=0.0, y_offset=0.0, z_offset=0.0):
 
         self.n_bins = n_bins                    # Number of samples per active side and ping
         self.range = range                      # Sonar range in meters
         self.theta = theta                      # Angle from sonars y-axis to its acoustic axis 
         self.alpha = alpha                      # Angle of the transducer opening
         self.slant_resolution = range/n_bins    # Slant resolution [m] across track
+        self.x_offset = x_offset                # Offset from the body frame in x direction
+        self.y_offset = y_offset                # Offset from the body frame in y direction
+        self.z_offset = z_offset                # Offset from the body frame in z direction
 
 
 class Map:
