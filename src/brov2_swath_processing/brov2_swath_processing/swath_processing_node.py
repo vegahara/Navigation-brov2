@@ -172,52 +172,66 @@ class SwathProcessingNode(Node):
         odom_timestamp_new = None
         altitude_timestamp_new = None
 
-        if self.unprocessed_odoms and self.unprocessed_altitudes:
-            for i in range(1,len(self.unprocessed_odoms)):
-                odom_timestamp_new = Time(
-                    seconds=self.unprocessed_odoms[i].header.stamp.sec,
-                    nanoseconds=self.unprocessed_odoms[i].header.stamp.nanosec
-                )
-            
-                if swath_timestamp - odom_timestamp_new <= Duration(seconds=0, nanoseconds=0):
-                    odom_new_index = i
-                    break
-                else:
-                    odom_timestamp_old = odom_timestamp_new
 
-            for i in range(1,len(self.unprocessed_altitudes)):
-                altitude_timestamp_new = Time(
-                    seconds=self.unprocessed_altitudes[i].header.stamp.sec,
-                    nanoseconds=self.unprocessed_altitudes[i].header.stamp.nanosec
-                )
-            
-                if swath_timestamp - altitude_timestamp_new <= Duration(seconds=0, nanoseconds=0):
-                    altitude_new_index = i
-                    break
-                else:
-                    altitude_timestamp_old = altitude_timestamp_new
+
+        if self.unprocessed_odoms and self.unprocessed_altitudes:
+
+            odom_timestamp_old = Time(
+                seconds=self.unprocessed_odoms[0].header.stamp.sec,
+                nanoseconds=self.unprocessed_odoms[0].header.stamp.nanosec
+            )
+
+            altitude_timestamp_old = Time(
+                seconds=self.unprocessed_altitudes[0].header.stamp.sec,
+                nanoseconds=self.unprocessed_altitudes[0].header.stamp.nanosec
+            )
+
+            if swath_timestamp - odom_timestamp_old > Duration(seconds=0, nanoseconds=0):
+                for i in range(1,len(self.unprocessed_odoms)):
+                    odom_timestamp_new = Time(
+                        seconds=self.unprocessed_odoms[i].header.stamp.sec,
+                        nanoseconds=self.unprocessed_odoms[i].header.stamp.nanosec
+                    )
+                
+                    if swath_timestamp - odom_timestamp_new <= Duration(seconds=0, nanoseconds=0):
+                        odom_new_index = i
+                        break
+                    else:
+                        odom_timestamp_old = odom_timestamp_new
+
+            if swath_timestamp - altitude_timestamp_old > Duration(seconds=0, nanoseconds=0):
+                for i in range(1,len(self.unprocessed_altitudes)):
+                    altitude_timestamp_new = Time(
+                        seconds=self.unprocessed_altitudes[i].header.stamp.sec,
+                        nanoseconds=self.unprocessed_altitudes[i].header.stamp.nanosec
+                    )
+                
+                    if swath_timestamp - altitude_timestamp_new <= Duration(seconds=0, nanoseconds=0):
+                        altitude_new_index = i
+                        break
+                    else:
+                        altitude_timestamp_old = altitude_timestamp_new
 
         # Return of we dont have odom and altitude newer than the sonar timestamp
-        if odom_new_index == None or altitude_new_index == None:
+        if (odom_new_index == None) or (altitude_new_index == None):
             self.unprocessed_altitudes = [self.unprocessed_altitudes[-1]]
             self.unprocessed_odoms = [self.unprocessed_odoms[-1]]
             return swath, False
-
-
-        odom_timestamp_old = Time(
-            seconds=self.unprocessed_odoms[odom_new_index-1].header.stamp.sec,
-            nanoseconds=self.unprocessed_odoms[odom_new_index-1].header.stamp.nanosec
-        )
-
-        altitude_timestamp_old = Time(
-            seconds=self.unprocessed_altitudes[altitude_new_index-1].header.stamp.sec,
-            nanoseconds=self.unprocessed_altitudes[altitude_new_index-1].header.stamp.nanosec
-        )
 
         # Altitude interpolation
         t1 = swath_timestamp - altitude_timestamp_old
         t2 = altitude_timestamp_new - altitude_timestamp_old
         t_altitude = t1.nanoseconds / t2.nanoseconds
+
+        if t_altitude < 0 or t_altitude > 1:
+            print('Altitude:')
+            print(altitude_new_index)
+            print(swath_timestamp)
+            print(altitude_timestamp_old)
+            print(altitude_timestamp_new)
+            print(t1)
+            print(t2)
+            print(t_altitude)
 
         altitude_old = self.unprocessed_altitudes[altitude_new_index-1].altitude
         altitude_new = self.unprocessed_altitudes[altitude_new_index].altitude
@@ -228,6 +242,15 @@ class SwathProcessingNode(Node):
         t1 = swath_timestamp - odom_timestamp_old
         t2 = odom_timestamp_new - odom_timestamp_old
         t_odom = t1.nanoseconds / t2.nanoseconds
+
+        if t_odom < 0 or t_odom > 1:
+            print('Odom:')
+            print(swath_timestamp)
+            print(odom_timestamp_old)
+            print(odom_timestamp_new)
+            print(t1)
+            print(t2)
+            print(t_odom)
 
         quaternions = R.from_quat([
             [
