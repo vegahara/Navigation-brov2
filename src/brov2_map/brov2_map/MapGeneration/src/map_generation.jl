@@ -6,10 +6,11 @@ using LinearAlgebra
 import NearestNeighbors
 import Distances
 import Statistics
+import Distributions
 
 
 # Struct to represent the polar coordinates of each of the four corners, referenced to a local frame.
-# First element contains the range and second thetha.  
+# First element contains the range and second theta.  
 struct CellLocal
     tl_corner::SVector{2,Float64}
     tr_corner::SVector{2,Float64}
@@ -24,7 +25,7 @@ struct Swath
     altitude::Float64
 end
 
-function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, map_origin_y, swaths, sonar_range, sonar_alpha, swath_ground_resolution)
+function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, map_origin_y, swaths, sonar_range, sonar_horizontal_beam_spread, swath_ground_resolution)
 
     map_origin = SVector{2,Float64}(map_origin_x, map_origin_y)
     probability_map = fill(1.0, (n_rows, n_colums))
@@ -53,9 +54,12 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
             cell_l = get_cell_coordinates(cell_global, swath.odom, map_resolution)
 
-            if is_cell_observed(cell_l, sonar_range, sonar_alpha)
+            prob_swath = get_cell_probability_gaussian(cell_l, sonar_range, sonar_horizontal_beam_spread)
 
-                prob_swath = get_cell_probability_uniform(cell_l, sonar_alpha)
+            if prob_swath >= 0.05
+            # if is_cell_observed(cell_l, sonar_range, sonar_horizontal_beam_spread)
+
+                # prob_swath = get_cell_probability_gaussian(cell_l, sonar_horizontal_beam_spread)
                 echo_intensity_swath = get_cell_echo_intensity(cell_l, swath, swath_ground_resolution, n_bins)
                 
                 if !isnan(echo_intensity_swath)
@@ -121,7 +125,7 @@ function get_cell_coordinates(cell_global, local_frame, map_resolution)
 end
 
 
-function is_cell_observed(cell_l, sonar_range, sonar_alpha)
+function is_cell_observed(cell_l, sonar_range, sonar_horizontal_beam_spread)
 
     corners = [cell_l.tl_corner, cell_l.tr_corner, cell_l.br_corner, cell_l.bl_corner]
 
@@ -145,11 +149,38 @@ function is_cell_observed(cell_l, sonar_range, sonar_alpha)
     # hence, the cell is observed
     # ((max_theta - min_theta) < pi) is to fix wrap around bug
 
-    return (min_r < sonar_range) && ((abs_min_theta < sonar_alpha) || (max_theta > 0 && min_theta < 0 && (max_theta - min_theta) < pi))
-end    
+    return (min_r < sonar_range) && ((abs_min_theta < sonar_horizontal_beam_spread) || (max_theta > 0 && min_theta < 0 && (max_theta - min_theta) < pi))
+end 
+
+# With range checking
+function get_cell_probability_gaussian(cell_l, sonar_range, sonar_horizontal_beam_spread)
+    
+    corners = [cell_l.tl_corner, cell_l.tr_corner, cell_l.br_corner, cell_l.bl_corner]
+
+    # Correct based on left or right swath
+    corr = pi/2 + (corners[1][2] > pi)*pi
+
+    min_r = corners[1][1]
+    min_theta = corners[1][2] - corr
+    max_theta = min_theta
+ 
+    for i = 2:4
+        min_r = min(min_r, corners[i][1])
+        new_theta = corners[i][2] - corr
+        min_theta = min(min_theta, new_theta)
+        max_theta = max(max_theta, new_theta)
+    end
+
+    if (min_r < sonar_range) && ((max_theta - min_theta) < pi)
+        d = Distributions.Normal(0.0, sonar_horizontal_beam_spread)
+        return Distributions.cdf(d, max_theta) - Distributions.cdf(d, min_theta)
+    else
+        return 0.0
+    end
+end
     
 
-function get_cell_probability_uniform(cell_l, sonar_alpha)
+function get_cell_probability_uniform(cell_l, sonar_horizontal_beam_spread)
 
     corners = [cell_l.tl_corner, cell_l.tr_corner, cell_l.br_corner, cell_l.bl_corner]
 
@@ -161,12 +192,34 @@ function get_cell_probability_uniform(cell_l, sonar_alpha)
         max_theta = max(max_theta, corners[i][2])
     end
 
-    if (max_theta - min_theta) > sonar_alpha
+    if (max_theta - min_theta) > sonar_horizontal_beam_spread
         # Pixel is covering the whole beam and we cant have more than 1 in probability
         return 1
     else
-        return (max_theta - min_theta) / sonar_alpha 
+        return (max_theta - min_theta) / sonar_horizontal_beam_spread 
     end
+end
+
+
+function get_cell_probability_gaussian(cell_l, sonar_horizontal_beam_spread)
+
+    corners = [cell_l.tl_corner, cell_l.tr_corner, cell_l.br_corner, cell_l.bl_corner]
+
+    # Correct based on left or right swath
+    corr = pi/2 + (corners[1][2] > pi)*pi
+
+    min_theta = corners[1][2] - corr
+    max_theta = min_theta
+
+    for i = 2:4
+        new_theta = corners[i][2] - corr
+        min_theta = min(min_theta, new_theta)
+        max_theta = max(max_theta, new_theta)
+    end
+    
+    d = Distributions.Normal(0.0, sonar_horizontal_beam_spread)
+
+    return Distributions.cdf(d, max_theta) - Distributions.cdf(d, min_theta)
 end
 
 
