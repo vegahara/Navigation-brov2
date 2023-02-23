@@ -7,6 +7,8 @@ import NearestNeighbors
 import Distances
 import Statistics
 import Distributions
+import Images
+import ImageFiltering
 
 
 # Struct to represent the polar coordinates of each of the four corners, referenced to a local frame.
@@ -94,6 +96,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         n_rows, n_colums, echo_intensity_map, 
         map_resolution, k, variance_ceiling, max_distance
     )
+    for i=1:6
+        echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 1.0)
+    end
 
     return echo_intensity_map, probability_map
     # return intensity_variance, probability_map
@@ -361,6 +366,46 @@ function anisotropic_diffusion(img; niter=1, kappa=50, gamma=0.1, voxelspacing=n
         out = out + gamma * sum(matrices)
     end
     return out
+end
+
+
+function speckle_reducing_bilateral_filter(n_rows, n_colums, map, standard_deviation)
+
+    filtered_map = fill(NaN, (n_rows, n_colums))
+
+    spatial_kernel = ImageFiltering.Kernel.gaussian(standard_deviation)
+    kernel_size = size(spatial_kernel)[1]
+
+    padded_map = Images.padarray(map, Images.Pad(:reflect,Int((floor(kernel_size/2))), Int(floor(kernel_size/2))))
+
+    for row=1:n_rows, col=1:n_colums
+        if isnan(map[row, col])
+            continue
+        end
+
+        current_cell_int = map[row, col]
+
+        normalization_factor = 0.0
+        filtered_cell = 0.0
+
+        for i=-Int((floor(kernel_size/2))):Int((floor(kernel_size/2))), j=-Int((floor(kernel_size/2))):Int((floor(kernel_size/2)))
+            if isnan(padded_map[row+i,col+j])
+                continue
+            end
+
+            spatial_support = spatial_kernel[i,j] * padded_map[row+i,col+j]
+            alpha_squared = (padded_map[row+i,col+j] ^ 2)/2
+            range_support = (current_cell_int/alpha_squared) * exp(-(current_cell_int^2)/(2*alpha_squared))
+            filtered_cell += padded_map[row+i,col+j] * spatial_support * range_support
+            normalization_factor += spatial_support * range_support
+        end
+
+        filtered_map[row, col] = filtered_cell / normalization_factor
+
+    end  
+
+    return filtered_map
+
 end
 
 end
