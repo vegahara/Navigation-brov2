@@ -57,20 +57,19 @@ def convert_data(writer, df_arr, topic_name_arr, msg_type_arr, populate_fcn_arr)
         print("Got ", bad_msgs, " bad messages from the populate fcn")   
 
 def populate_sonar_msg(sonar_msg, df, row):
-    # Just discarding last value in data for now, should be investigated
     
     if not (df[' entity '][row] == ' Sidescan'):
         return sonar_msg, False
 
-    data = df[' data'][row]
+    data = df[' data'][row].strip()
     sonar_data = []
     
     for i in range(0, len(data), 2):
         # Data is big endian and has to be interpred in reverse
-        sonar_data.append(int(data[i:i+2][::-1], base=16)) 
+        sonar_data.append(int(data[i:i+2], base=16)) 
 
     sonar_msg.data_zero = [int_val.to_bytes(1, 'big') for int_val in sonar_data[:len(sonar_data)//2]]
-    sonar_msg.data_one = [int_val.to_bytes(1, 'big') for int_val in sonar_data[len(sonar_data)//2:-1]]
+    sonar_msg.data_one = [int_val.to_bytes(1, 'big') for int_val in sonar_data[len(sonar_data)//2:]]
 
     return sonar_msg, True
 
@@ -109,7 +108,7 @@ def populate_odom_msg(odom_msg, df, row):
 def main():
 
     # Set up bag
-    bag_path = 'bag'
+    bag_path = 'bag_training_new'
 
     storage_options, converter_options = get_rosbag_options(bag_path)
 
@@ -126,9 +125,9 @@ def main():
     create_topic(writer, odom_topic_name, 'nav_msgs/msg/Odometry')
 
     # Load data
-    df_sonar = pd.read_csv('csv/SonarData.csv')
-    df_dvl = pd.read_csv('csv/EstimatedState.csv') 
-    df_odom = pd.read_csv('csv/EstimatedState.csv')
+    df_sonar = pd.read_csv('csv_training/SonarData.csv')
+    df_dvl = pd.read_csv('csv_training/EstimatedState.csv') 
+    df_odom = pd.read_csv('csv_training/EstimatedState.csv')
 
     convert_data(writer,
                 [df_dvl, df_odom, df_sonar],  

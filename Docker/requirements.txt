@@ -6,6 +6,4 @@ julia==0.5.7
 jupyter==1.0.0
 bqplot==0.11.2 
 pyyaml==5.3.1
-ipywidgets==7.7.2
-jupyros==0.6.1 
 opencv-python==4.6.0.66

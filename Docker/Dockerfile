@@ -29,16 +29,12 @@ RUN julia /home/requirements.jl
 ADD Docker/requirements.txt /home/requirements.txt
 RUN python3 -m pip install -r /home/requirements.txt
 
-# Setup jupyter-ros2
-RUN jupyter nbextension enable --py --sys-prefix widgetsnbextension && \
-    jupyter nbextension enable --py --sys-prefix jupyros
-
 # Installs for matplotlib
-RUN apt-get -y install python3-tk texlive dvipng \
+RUN apt-get update && apt-get -y install python3-tk texlive dvipng \
     texlive-latex-extra texlive-fonts-recommended cm-super
 
 # Install tmux
-RUN apt-get -y install tmux
+RUN apt-get update && apt-get -y install tmux
 
 # Source ros
 RUN . /opt/ros/galactic/setup.sh

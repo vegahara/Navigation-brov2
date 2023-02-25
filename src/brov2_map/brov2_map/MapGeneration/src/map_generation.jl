@@ -20,7 +20,7 @@ struct CellLocal
     bl_corner::SVector{2,Float64}
 end
 
-struct Swath
+mutable struct Swath
     data_port
     data_stb
     odom::SVector{5,Float64} #(x,y,roll,pitch,yaw)
@@ -32,6 +32,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     map_origin = SVector{2,Float64}(map_origin_x, map_origin_y)
     probability_map = fill(1.0, (n_rows, n_colums))
     echo_intensity_map = fill(NaN, (n_rows, n_colums))
+    inverse_intensity_map = fill(NaN, (n_rows, n_colums))
     
     swath_locals = [Swath(
         swath.data_port, 
@@ -45,29 +46,67 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         float(swath.altitude)) 
         for swath in swaths]
 
+    min_intensity = 100.0
+    max_intensity = 0.0
+
+    for swath in swath_locals
+        for bin in swath.data_port
+            if isnan(bin)
+                continue
+            end
+            min_intensity = min(min_intensity, bin)
+            max_intensity = max(max_intensity, bin)
+        end
+        for bin in swath.data_stb
+            if isnan(bin)
+                continue
+            end
+            min_intensity = min(min_intensity, bin)
+            max_intensity = max(max_intensity, bin)
+        end
+    end
+
+    inverse_swath_locals = [Swath(
+        swath.data_port, 
+        swath.data_stb, 
+        SVector{5,Float64}(
+            swath.odom[1]+swath.altitude*sin(swath.odom[4])*cos(swath.odom[5]), # Pitch correction
+            swath.odom[2]+swath.altitude*sin(swath.odom[4])*sin(swath.odom[5]), # Pitch correction
+            swath.odom[3],
+            swath.odom[4],
+            swath.odom[5]),
+        float(swath.altitude)) 
+        for swath in swaths]
+
+    for inverse_swath in inverse_swath_locals
+        inverse_swath.data_port = (max_intensity + min_intensity) .-inverse_swath.data_port
+        inverse_swath.data_stb = (max_intensity + min_intensity) .-inverse_swath.data_stb
+    end
+
     for row=1:n_rows, col=1:n_colums
         cell_global = get_cell_global_coordinates(row,col,map_resolution,map_origin)
         echo_intensities = []
+        inverse_intesitites = []
         swath_probabilities = []
         probability = 1.0
         cell_observed = false
 
-        for swath in swath_locals
+        for (swath, inverse_swath) in zip(swath_locals, inverse_swath_locals)
 
             cell_l = get_cell_coordinates(cell_global, swath.odom, map_resolution)
 
             prob_swath = get_cell_probability_gaussian(cell_l, sonar_range, sonar_horizontal_beam_spread)
 
-            if prob_swath >= 0.05
-            # if is_cell_observed(cell_l, sonar_range, sonar_horizontal_beam_spread)
+            if prob_swath >= 0.1
 
-                # prob_swath = get_cell_probability_gaussian(cell_l, sonar_horizontal_beam_spread)
                 echo_intensity_swath = get_cell_echo_intensity(cell_l, swath, swath_ground_resolution, n_bins)
+                inverse_intensity_swath = get_cell_echo_intensity(cell_l, inverse_swath, swath_ground_resolution, n_bins)
                 
                 if !isnan(echo_intensity_swath)
                     cell_observed = true
 
                     push!(echo_intensities, echo_intensity_swath)
+                    push!(inverse_intesitites, inverse_intensity_swath)
                     push!(swath_probabilities, prob_swath)
                 
                     probability *= (1 - prob_swath)
@@ -80,6 +119,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
             normalized_swath_probabilities = swath_probabilities ./ sum(swath_probabilities)
             probability_map[row,col] = probability
             echo_intensity_map[row,col] = sum(normalized_swath_probabilities .* echo_intensities)
+            inverse_intensity_map[row,col] = sum(normalized_swath_probabilities .* inverse_intesitites)
         end
 
         if col == n_colums
@@ -87,20 +127,35 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         end
     end
 
+    min_intensity = minimum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
+    max_intensity = maximum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
+
+    inverse_intensity_map = (min_intensity + max_intensity) .- inverse_intensity_map
+
     k = 4;
     # variance_ceiling = 0.05
     variance_ceiling = 5
     max_distance = 0.5
 
-    intensity_mean, intensity_variance, echo_intensity_map = knn(
-        n_rows, n_colums, echo_intensity_map, 
-        map_resolution, k, variance_ceiling, max_distance
-    )
-    for i=1:6
-        echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 1.0)
-    end
+    # intensity_mean, intensity_variance, echo_intensity_map = knn(
+    #     n_rows, n_colums, echo_intensity_map, 
+    #     map_resolution, k, variance_ceiling, max_distance
+    # )
 
-    return echo_intensity_map, probability_map
+    # inverse_intensity_mean, inverse_intensity_variance, inverse_intensity_map = knn(
+    #     n_rows, n_colums, inverse_intensity_map, 
+    #     map_resolution, k, variance_ceiling, max_distance
+    # )
+    
+    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 1.0)
+    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.7)
+    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.5)
+    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.3)
+    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.1)
+    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.05)
+
+    return echo_intensity_map, inverse_intensity_map
+    #return echo_intensity_map, probability_map
     # return intensity_variance, probability_map
     # return echo_intensity_map, intensity_variance
 end
@@ -165,18 +220,18 @@ function get_cell_probability_gaussian(cell_l, sonar_range, sonar_horizontal_bea
     # Correct based on left or right swath
     corr = pi/2 + (corners[1][2] > pi)*pi
 
-    min_r = corners[1][1]
+    max_r = corners[1][1]
     min_theta = corners[1][2] - corr
     max_theta = min_theta
  
     for i = 2:4
-        min_r = min(min_r, corners[i][1])
+        max_r = max(max_r, corners[i][1])
         new_theta = corners[i][2] - corr
         min_theta = min(min_theta, new_theta)
         max_theta = max(max_theta, new_theta)
     end
 
-    if (min_r < sonar_range) && ((max_theta - min_theta) < pi)
+    if (max_r < sonar_range) && ((max_theta - min_theta) < pi)
         d = Distributions.Normal(0.0, sonar_horizontal_beam_spread)
         return Distributions.cdf(d, max_theta) - Distributions.cdf(d, min_theta)
     else
@@ -237,24 +292,28 @@ function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
         corner = getfield(cell_l,f)
 
         # Interpolate
-        lower_index = floor(Int64, corner[1]/swath_resolution) + 1
-        higher_index = ceil(Int64, corner[1]/swath_resolution) + 1
+        lower_index = floor(Int64, corner[1]/swath_resolution)
+        higher_index = ceil(Int64, corner[1]/swath_resolution)
         w1 = corner[1]/swath_resolution - lower_index
         w2 = 1 - w1
 
-        # The corner is outside the swath range
-        if higher_index > n_bins
+        if (lower_index == 0)
+            continue
+        end
+
+        # The corner is outside the swath range or not measured
+        if (higher_index > n_bins) || (lower_index == 0)
             continue
         end
 
         if corner[2] > pi
             measure_intensity = w1*swath.data_stb[higher_index] + w2*swath.data_stb[lower_index]
         else
-            measure_intensity = w1*swath.data_port[1+n_bins-higher_index] + w2*swath.data_port[1+n_bins-lower_index]
+            measure_intensity = w1*reverse(swath.data_port)[higher_index] + w2*reverse(swath.data_port)[lower_index]
         end
 
         # Do not use corner if it evaluate to NaN
-        if measure_intensity === NaN
+        if isnan(measure_intensity)
             continue
         end
 
@@ -393,11 +452,10 @@ function speckle_reducing_bilateral_filter(n_rows, n_colums, map, standard_devia
                 continue
             end
 
-            spatial_support = spatial_kernel[i,j] * padded_map[row+i,col+j]
-            alpha_squared = (padded_map[row+i,col+j] ^ 2)/2
+            alpha_squared = (padded_map[row+i,col+j] ^ 2) / 2
             range_support = (current_cell_int/alpha_squared) * exp(-(current_cell_int^2)/(2*alpha_squared))
-            filtered_cell += padded_map[row+i,col+j] * spatial_support * range_support
-            normalization_factor += spatial_support * range_support
+            filtered_cell += padded_map[row+i,col+j] * spatial_kernel[i,j] * range_support
+            normalization_factor += spatial_kernel[i,j] * range_support
         end
 
         filtered_map[row, col] = filtered_cell / normalization_factor

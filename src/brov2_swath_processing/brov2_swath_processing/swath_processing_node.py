@@ -24,7 +24,7 @@ class SwathProcessingNode(Node):
             ('swath_processed_topic_name', 'swath_processed'),
             ('altitude_topic_name', 'dvl/velocity_estimate'),
             ('odometry_topic_name', '/CSEI/observer/odom'),
-            ('processing_period', 0.01),
+            ('processing_period', 0.1),
             ('swath_normalizaton_smoothing_param', 1e-6),
             ('swath_ground_range_resolution', 0.03),
             ('sonar_n_bins', 1000),
@@ -101,8 +101,8 @@ class SwathProcessingNode(Node):
 
         swath = Swath(
             header = msg.header,
-            data_port=np.array([int.from_bytes(b, "big") for b in msg.data_zero]),
-            data_stb=np.array([int.from_bytes(b, "big") for b in msg.data_one]),
+            data_port=np.array([int.from_bytes(b, "big") for b in msg.data_zero],dtype=float),
+            data_stb=np.array([int.from_bytes(b, "big") for b in msg.data_one],dtype=float),
             odom=Odometry(),
             altitude=None
         )
@@ -125,8 +125,8 @@ class SwathProcessingNode(Node):
         msg.header = swath.header
         msg.odom = swath.odom
         msg.altitude = swath.altitude
-        msg.data_stb = swath.data_stb
         msg.data_port = swath.data_port
+        msg.data_stb = swath.data_stb
 
         self.swath_processed_puplisher.publish(msg)
 
@@ -162,6 +162,67 @@ class SwathProcessingNode(Node):
         return roll, pitch, yaw
 
 
+    def speckle_reducing_bilateral_filter(self, data, sigma):
+
+        # make the radius of the filter equal to 4.0 standard deviations
+        radius = int(4.0 * sigma + 0.5)
+        sigma2 = sigma * sigma
+        x = np.arange(-radius, radius+1)
+        spatial_support = np.exp(-0.5 / sigma2 * x ** 2)
+        spatial_support = spatial_support / spatial_support.sum()
+
+        filtered_data = np.zeros(data.shape)
+
+        for i in range(len(data)):
+            j = np.arange(-radius, radius+1)
+
+            # Reflecting the borders of the signal
+            j = np.where(i + j < 0, abs(j), j)
+            j = np.where(i + j > len(data)-1, -j, j)
+
+            alpha2 = data[i+j]**2
+            range_support = (data[i] / alpha2) * np.exp((-data[i]**2)/(2*alpha2))
+            filtered_data_point = np.sum(data[i+j] * spatial_support[j] * range_support)
+            normalization_factor = np.sum(spatial_support[j] * range_support)
+            filtered_data[i] = filtered_data_point / normalization_factor
+
+        # plt.plot(data)
+        # plt.plot(filtered_data)
+        # plt.show()
+        # input('Press any key to continue')
+
+        return filtered_data
+
+    def bilateral_filter(self, data, sigma_c, sigma_s, radius=None):
+
+        # make the radius of the filter equal to 4 standard deviations
+        if radius == None:
+            radius = int(4.0 * sigma_c + 0.5)
+
+        filtered_data = np.zeros(data.shape)
+
+        for i in range(len(data)):
+            j = np.arange(-radius, radius+1)
+
+            # Reflecting the borders of the signal
+            j = np.where(i + j < 0, abs(j), j)
+            j = np.where(i + j > len(data)-1, -j, j)
+
+            spatial_support = np.exp((-(j)**2)/(2*sigma_c**2))
+            range_support = np.exp((-(data[i]-data[i+j])**2)/(2*sigma_s**2))
+            filtered_data_point = np.sum(data[i+j] * spatial_support * range_support)
+            normalization_factor = np.sum(spatial_support * range_support)
+            filtered_data[i] = filtered_data_point / normalization_factor
+
+        # plt.plot(data)
+        # plt.plot(filtered_data)
+        # plt.show()
+        # input('Press any key to continue')
+
+        return filtered_data
+
+
+
     ### DATA PROCESSING FUNCTIONS
     def odom_and_altitude_interpolation(self, swath:Swath):
         swath_timestamp = Time(seconds=swath.header.stamp.sec, nanoseconds=swath.header.stamp.nanosec)
@@ -171,8 +232,6 @@ class SwathProcessingNode(Node):
 
         odom_timestamp_new = None
         altitude_timestamp_new = None
-
-
 
         if self.unprocessed_odoms and self.unprocessed_altitudes:
 
@@ -223,16 +282,6 @@ class SwathProcessingNode(Node):
         t2 = altitude_timestamp_new - altitude_timestamp_old
         t_altitude = t1.nanoseconds / t2.nanoseconds
 
-        if t_altitude < 0 or t_altitude > 1:
-            print('Altitude:')
-            print(altitude_new_index)
-            print(swath_timestamp)
-            print(altitude_timestamp_old)
-            print(altitude_timestamp_new)
-            print(t1)
-            print(t2)
-            print(t_altitude)
-
         altitude_old = self.unprocessed_altitudes[altitude_new_index-1].altitude
         altitude_new = self.unprocessed_altitudes[altitude_new_index].altitude
 
@@ -242,15 +291,6 @@ class SwathProcessingNode(Node):
         t1 = swath_timestamp - odom_timestamp_old
         t2 = odom_timestamp_new - odom_timestamp_old
         t_odom = t1.nanoseconds / t2.nanoseconds
-
-        if t_odom < 0 or t_odom > 1:
-            print('Odom:')
-            print(swath_timestamp)
-            print(odom_timestamp_old)
-            print(odom_timestamp_new)
-            print(t1)
-            print(t2)
-            print(t_odom)
 
         quaternions = R.from_quat([
             [
@@ -289,13 +329,69 @@ class SwathProcessingNode(Node):
 
 
     def intensity_correction(self, swath:Swath) -> Swath:
-        x = np.linspace(0., self.sonar.n_bins, self.sonar.n_bins)
-        spl_stb = csaps(x, swath.data_stb, x, smooth=self.swath_normalizaton_smoothing_param)
-        swath.data_stb = np.divide(swath.data_stb, spl_stb)
 
-        x = np.linspace(0., self.sonar.n_bins, self.sonar.n_bins)
-        spl_port = csaps(x, swath.data_port, x, smooth=self.swath_normalizaton_smoothing_param)
-        swath.data_port = np.divide(swath.data_port, spl_port)
+        _r_port, _r_stb, index_fbr_port, index_fbr_stb = self.get_first_bottom_returns(swath)
+
+        x = np.linspace(0., self.sonar.n_bins-index_fbr_stb, self.sonar.n_bins-index_fbr_stb)
+        spl_stb = np.flip(csaps(
+            x, 
+            np.flip(swath.data_stb[index_fbr_stb:]), 
+            x, 
+            smooth=self.swath_normalizaton_smoothing_param
+        ))
+
+        # plt.plot(swath.data_stb)
+        # plt.plot(spl_stb)
+        # plt.show()
+        # input('Press any key to continue')
+        swath.data_stb[index_fbr_stb:] = np.divide(swath.data_stb[index_fbr_stb:], spl_stb)
+
+        x = np.linspace(0., self.sonar.n_bins-index_fbr_port, self.sonar.n_bins-index_fbr_port)
+        spl_port = csaps(
+            x, 
+            swath.data_port[:-index_fbr_port], 
+            x, 
+            smooth=self.swath_normalizaton_smoothing_param
+        )
+        # plt.plot(swath.data_port)
+        # plt.plot(spl_port)
+        # plt.show()
+        # input('Press any key to continue')
+        
+        swath.data_port[:-index_fbr_port] = np.divide(swath.data_port[:-index_fbr_port], spl_port)
+
+        # plt.plot(swath.data_port)
+
+        # plt.show()
+        # input('Press any key to continue')
+        return swath
+
+
+    def intensity_correction_srbf(self, swath:Swath, sigma) -> Swath:
+
+        filtered_stb = self.speckle_reducing_bilateral_filter(swath.data_stb, sigma)
+        swath.data_stb = np.divide(swath.data_stb, filtered_stb)
+
+        filtered_port = self.speckle_reducing_bilateral_filter(swath.data_port, sigma)
+        swath.data_port = np.divide(swath.data_port, filtered_port)
+
+        return swath
+
+    def intensity_correction_bf(self, swath:Swath, sigma_c, sigma_s, radius) -> Swath:
+
+        filtered_stb = self.bilateral_filter(swath.data_stb, sigma_c, sigma_s, radius)
+        swath.data_stb = np.divide(swath.data_stb, filtered_stb)
+
+        filtered_port = self.bilateral_filter(swath.data_port ,sigma_c, sigma_s, radius)
+        swath.data_port = np.divide(swath.data_port, filtered_port)
+
+        return swath
+
+
+    def swath_filtering(self, swath:Swath, sigma) -> Swath:
+        
+        swath.data_stb = self.speckle_reducing_bilateral_filter(swath.data_stb, sigma)
+        swath.data_port = self.speckle_reducing_bilateral_filter(swath.data_port, sigma)
 
         return swath
 
@@ -349,7 +445,7 @@ class SwathProcessingNode(Node):
             return
 
         swath = self.unprocessed_swaths[0]
-
+    
         self.n_tries_interpolating_swath += 1
         swath, continue_processing = self.odom_and_altitude_interpolation(swath)
 
@@ -361,30 +457,46 @@ class SwathProcessingNode(Node):
         else:
             self.n_tries_interpolating_swath = 0
 
-        range_fbr_port, range_fbr_stb, _b_port, _b_stb = self.get_first_bottom_returns(self.unprocessed_swaths[0])
-        if  range_fbr_port > self.sonar.range or range_fbr_stb > self.sonar.range:
-            self.unprocessed_swaths.pop(0)
-            return
-
-        swath = self.intensity_correction(swath)
-
-        swath = self.blind_zone_removal(swath)
-
-        swath = self.slant_range_correction(swath)
-
         self.unprocessed_swaths.pop(0)
 
-        self.sonar_pub(swath)
+        range_fbr_port, range_fbr_stb, _b_port, _b_stb = self.get_first_bottom_returns(swath)
+        if  range_fbr_port > self.sonar.range or range_fbr_stb > self.sonar.range:
+            return
 
-        # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
+        # swath = self.intensity_correction_srbf(swath, 5.0)
 
-        # if len(self.processed_swaths) > 2990: 
-        #     sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
+        # swath = self.intensity_correction_bf(swath, 40.0, 20.0, 20)
 
-        #     plt.imshow(sonar_im, cmap='copper', vmin=0.6,vmax=1.5)
-        #     plt.show()
+        # swath = self.swath_filtering(swath, 1.0)
 
-        #     input('Press any key to continue')
+        # swath = self.blind_zone_removal(swath)
+
+        # swath = self.intensity_correction(swath)
+
+        # swath = self.slant_range_correction(swath)
+
+        # self.sonar_pub(swath)
+
+        self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
+
+        if len(self.processed_swaths) > 400: 
+            sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
+
+            # hist, _bin_edges = np.histogram(np.nan_to_num(sonar_im).ravel(), bins=200, range=(0.5,1.5))
+
+            # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10,5))
+
+            # ax1.imshow(sonar_im, cmap='copper', vmin=0.6 , vmax=1.4)
+            # ax2.plot(hist)
+            # ax2.set_xlim([-1, 201])
+            # ax2.set_xticks(np.arange(0, 201, 20))
+            # ax2.set_xticklabels([f'{x:.1f}' for x in np.arange(0.5, 1.5001, 0.1)])
+            
+
+            plt.imshow(sonar_im, cmap='copper')
+            plt.show()
+
+            input('Press any key to continue')
 
         # self.processed_swaths.append(swath)
 
