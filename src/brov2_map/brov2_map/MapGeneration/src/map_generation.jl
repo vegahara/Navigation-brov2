@@ -127,14 +127,14 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         end
     end
 
-    min_intensity = minimum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
-    max_intensity = maximum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
+    # min_intensity = minimum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
+    # max_intensity = maximum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
 
-    inverse_intensity_map = (min_intensity + max_intensity) .- inverse_intensity_map
+    # inverse_intensity_map = (min_intensity + max_intensity) .- inverse_intensity_map
 
     k = 4;
-    # variance_ceiling = 0.05
-    variance_ceiling = 5
+    variance_ceiling = 0.05
+    # variance_ceiling = 5
     max_distance = 0.5
 
     # intensity_mean, intensity_variance, echo_intensity_map = knn(
@@ -151,11 +151,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.7)
     # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.5)
     # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.3)
-    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.1)
-    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.05)
-
-    return echo_intensity_map, inverse_intensity_map
-    #return echo_intensity_map, probability_map
+    
+    # return echo_intensity_map, inverse_intensity_map
+    return echo_intensity_map, probability_map
     # return intensity_variance, probability_map
     # return echo_intensity_map, intensity_variance
 end

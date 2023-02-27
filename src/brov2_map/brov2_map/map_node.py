@@ -32,7 +32,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 300),
+                        ('swaths_per_map', 4890),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -146,11 +146,11 @@ class MapNode(Node):
 
         ax2 = fig.add_subplot(1, 2, 2)
         #For probability map
-        #ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
+        ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
         # For variance map
-        #ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=5)
+        # ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=0.05)
         # For inverse map
-        ax2.imshow(prob_map, cmap='copper', vmin=0.5, vmax=1.3)
+        # ax2.imshow(prob_map, cmap='copper', vmin=0.6, vmax=1.4)
 
         x_labels = []
         x_locations = []

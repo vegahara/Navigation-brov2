@@ -108,7 +108,7 @@ def populate_odom_msg(odom_msg, df, row):
 def main():
 
     # Set up bag
-    bag_path = 'bag_training_new'
+    bag_path = 'bag'
 
     storage_options, converter_options = get_rosbag_options(bag_path)
 
@@ -125,9 +125,9 @@ def main():
     create_topic(writer, odom_topic_name, 'nav_msgs/msg/Odometry')
 
     # Load data
-    df_sonar = pd.read_csv('csv_training/SonarData.csv')
-    df_dvl = pd.read_csv('csv_training/EstimatedState.csv') 
-    df_odom = pd.read_csv('csv_training/EstimatedState.csv')
+    df_sonar = pd.read_csv('csv/SonarData.csv')
+    df_dvl = pd.read_csv('csv/EstimatedState.csv') 
+    df_odom = pd.read_csv('csv/EstimatedState.csv')
 
     convert_data(writer,
                 [df_dvl, df_odom, df_sonar],  

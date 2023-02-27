@@ -361,7 +361,6 @@ class SwathProcessingNode(Node):
         swath.data_port[:-index_fbr_port] = np.divide(swath.data_port[:-index_fbr_port], spl_port)
 
         # plt.plot(swath.data_port)
-
         # plt.show()
         # input('Press any key to continue')
         return swath
@@ -469,18 +468,18 @@ class SwathProcessingNode(Node):
 
         # swath = self.swath_filtering(swath, 1.0)
 
-        # swath = self.blind_zone_removal(swath)
+        swath = self.blind_zone_removal(swath)
 
-        # swath = self.intensity_correction(swath)
+        swath = self.intensity_correction(swath)
 
-        # swath = self.slant_range_correction(swath)
+        swath = self.slant_range_correction(swath)
 
-        # self.sonar_pub(swath)
+        self.sonar_pub(swath)
 
-        self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
+        # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
 
-        if len(self.processed_swaths) > 400: 
-            sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
+        # if len(self.processed_swaths) > 400: 
+        #     sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
 
             # hist, _bin_edges = np.histogram(np.nan_to_num(sonar_im).ravel(), bins=200, range=(0.5,1.5))
 
@@ -493,10 +492,10 @@ class SwathProcessingNode(Node):
             # ax2.set_xticklabels([f'{x:.1f}' for x in np.arange(0.5, 1.5001, 0.1)])
             
 
-            plt.imshow(sonar_im, cmap='copper')
-            plt.show()
+            # plt.imshow(sonar_im, cmap='copper')
+            # plt.show()
 
-            input('Press any key to continue')
+            # input('Press any key to continue')
 
         # self.processed_swaths.append(swath)
 
