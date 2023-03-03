@@ -77,7 +77,7 @@ class MapNode(Node):
             processing_period.value, self.map_generation
         )
 
-        self.get_logger().info("Landmark detector node initialized.")
+        self.get_logger().info("Map node initialized.")
 
     def processed_swath_callback(self, msg):
         pitch, yaw = utility_functions.pitch_yaw_from_quaternion(

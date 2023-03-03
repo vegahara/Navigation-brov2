@@ -18,7 +18,7 @@ from brov2_interfaces.msg import DVL
 class SwathProcessingNode(Node):
 
     def __init__(self):
-        super().__init__('sonar_data_processor')
+        super().__init__('swath_data_processor')
         self.declare_parameters(namespace='', parameters=[
             ('swath_raw_topic_name', 'sonar_data'),
             ('swath_processed_topic_name', 'swath_processed'),

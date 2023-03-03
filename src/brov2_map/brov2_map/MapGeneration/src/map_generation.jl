@@ -32,7 +32,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     map_origin = SVector{2,Float64}(map_origin_x, map_origin_y)
     probability_map = fill(1.0, (n_rows, n_colums))
     echo_intensity_map = fill(NaN, (n_rows, n_colums))
-    inverse_intensity_map = fill(NaN, (n_rows, n_colums))
+    range_map = fill(NaN, (n_rows, n_colums))
+    altitude_map = fill(NaN, (n_rows, n_colums))
+    observed_swath_map = fill([], (n_rows, n_colums))
     
     swath_locals = [Swath(
         swath.data_port, 
@@ -66,32 +68,17 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         end
     end
 
-    inverse_swath_locals = [Swath(
-        swath.data_port, 
-        swath.data_stb, 
-        SVector{5,Float64}(
-            swath.odom[1]+swath.altitude*sin(swath.odom[4])*cos(swath.odom[5]), # Pitch correction
-            swath.odom[2]+swath.altitude*sin(swath.odom[4])*sin(swath.odom[5]), # Pitch correction
-            swath.odom[3],
-            swath.odom[4],
-            swath.odom[5]),
-        float(swath.altitude)) 
-        for swath in swaths]
-
-    for inverse_swath in inverse_swath_locals
-        inverse_swath.data_port = (max_intensity + min_intensity) .-inverse_swath.data_port
-        inverse_swath.data_stb = (max_intensity + min_intensity) .-inverse_swath.data_stb
-    end
-
     for row=1:n_rows, col=1:n_colums
         cell_global = get_cell_global_coordinates(row,col,map_resolution,map_origin)
         echo_intensities = []
-        inverse_intesitites = []
         swath_probabilities = []
+        altitudes = []
+        observed_swaths = []
         probability = 1.0
+        cell_range = NaN
         cell_observed = false
 
-        for (swath, inverse_swath) in zip(swath_locals, inverse_swath_locals)
+        for (swath, swath_number) in zip(swath_locals, 1:length(swath_locals))
 
             cell_l = get_cell_coordinates(cell_global, swath.odom, map_resolution)
 
@@ -100,14 +87,16 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
             if prob_swath >= 0.1
 
                 echo_intensity_swath = get_cell_echo_intensity(cell_l, swath, swath_ground_resolution, n_bins)
-                inverse_intensity_swath = get_cell_echo_intensity(cell_l, inverse_swath, swath_ground_resolution, n_bins)
                 
                 if !isnan(echo_intensity_swath)
                     cell_observed = true
 
                     push!(echo_intensities, echo_intensity_swath)
-                    push!(inverse_intesitites, inverse_intensity_swath)
                     push!(swath_probabilities, prob_swath)
+                    push!(altitudes, swath.altitude)
+                    push!(observed_swaths, swath_number - 1) # 0 indexed
+
+                    cell_range = minimum(cell_range->isnan(cell_range) ? -Inf : cell_range, get_cell_range(cell_l))
                 
                     probability *= (1 - prob_swath)
                 end
@@ -119,18 +108,11 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
             normalized_swath_probabilities = swath_probabilities ./ sum(swath_probabilities)
             probability_map[row,col] = probability
             echo_intensity_map[row,col] = sum(normalized_swath_probabilities .* echo_intensities)
-            inverse_intensity_map[row,col] = sum(normalized_swath_probabilities .* inverse_intesitites)
-        end
-
-        if col == n_colums
-            println(row)
+            range_map[row,col] = cell_range
+            altitude_map[row,col] = sum(altitudes) / length(altitudes)
+            observed_swath_map[row,col] = observed_swaths
         end
     end
-
-    # min_intensity = minimum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
-    # max_intensity = maximum(inverse_intensity_map[.!isnan.(inverse_intensity_map)])
-
-    # inverse_intensity_map = (min_intensity + max_intensity) .- inverse_intensity_map
 
     k = 4;
     variance_ceiling = 0.05
@@ -153,7 +135,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.3)
     
     # return echo_intensity_map, inverse_intensity_map
-    return echo_intensity_map, probability_map
+    return echo_intensity_map, probability_map, observed_swath_map, range_map
     # return intensity_variance, probability_map
     # return echo_intensity_map, intensity_variance
 end
@@ -321,6 +303,18 @@ function get_cell_echo_intensity(cell_l, swath, swath_resolution, n_bins)
     end
 
     return pixel_intensity/valid_corners
+end
+
+function get_cell_range(cell_l)
+
+    sum = 0
+
+    for f in fieldnames(typeof(cell_l))
+        sum += getfield(cell_l,f)[1]
+    end
+
+    return sum/4
+
 end
 
 function knn(n_rows, n_colums, echo_map, map_resolution, k, variance_ceiling, max_distance)

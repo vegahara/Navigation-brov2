@@ -42,3 +42,9 @@ class Map:
                 (int(n_rows / resolution), int(n_colums/resolution)), 
                 dtype=float
             )
+
+class Landmark:
+    def __init__(self, x, y, height) -> None:
+        self.x = x              # Global x position of landmark
+        self.y = y              # Global y position of landmark
+        self.height = height    # Estimated height of landmark
