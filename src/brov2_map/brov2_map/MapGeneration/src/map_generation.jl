@@ -117,24 +117,21 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     k = 4;
     variance_ceiling = 0.05
     # variance_ceiling = 5
-    max_distance = 0.5
+    max_distance = 0.2
 
-    # intensity_mean, intensity_variance, echo_intensity_map = knn(
-    #     n_rows, n_colums, echo_intensity_map, 
-    #     map_resolution, k, variance_ceiling, max_distance
-    # )
+    echo_intensity_map, intensity_variance = knn(
+        n_rows, n_colums, echo_intensity_map, 
+        map_resolution, k, variance_ceiling, max_distance
+    )
+    
+    echo_intensity_map = speckle_reducing_bilateral_filter(echo_intensity_map, 0.1)
+    echo_intensity_map = speckle_reducing_bilateral_filter(echo_intensity_map, 0.3)
+    echo_intensity_map = speckle_reducing_bilateral_filter(echo_intensity_map, 0.5)
 
-    # inverse_intensity_mean, inverse_intensity_variance, inverse_intensity_map = knn(
-    #     n_rows, n_colums, inverse_intensity_map, 
-    #     map_resolution, k, variance_ceiling, max_distance
-    # )
+    # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.1, 0.5)
+    # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
+    # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
     
-    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 1.0)
-    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.7)
-    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.5)
-    # echo_intensity_map = speckle_reducing_bilateral_filter(n_rows, n_colums, echo_intensity_map, 0.3)
-    
-    # return echo_intensity_map, inverse_intensity_map
     return echo_intensity_map, probability_map, observed_swath_map, range_map
     # return intensity_variance, probability_map
     # return echo_intensity_map, intensity_variance
@@ -319,7 +316,6 @@ end
 
 function knn(n_rows, n_colums, echo_map, map_resolution, k, variance_ceiling, max_distance)
     
-
     # Make data vectors to use in kdtree
     cell_coordinates = SVector{2,Float64}[]
     intensity_values = []
@@ -337,6 +333,10 @@ function knn(n_rows, n_colums, echo_map, map_resolution, k, variance_ceiling, ma
     kdtree = NearestNeighbors.KDTree(cell_coordinates, Distances.Euclidean())
 
     for row=1:n_rows, col=1:n_colums
+        if !isnan(echo_map[row,col])
+            intensity_mean[row,col] = echo_map[row,col] 
+            continue
+        end
 
         idx, dist = NearestNeighbors.knn(
             kdtree,
@@ -357,105 +357,85 @@ function knn(n_rows, n_colums, echo_map, map_resolution, k, variance_ceiling, ma
         end
     end
     
-    # n_dim = max(n_rows,n_colums)
-    # padded_intensity_mean = fill(NaN, n_dim,n_dim)
-
-    # temp = copy(intensity_mean)
-    # padded_intensity_mean[1:n_rows,1:n_colums] = temp
-    # mask = isnan.(padded_intensity_mean)
-    # replace!(padded_intensity_mean, NaN=>0.0)
-
-    # filtered_image = anisotropic_diffusion(padded_intensity_mean, kappa=20, gamma=0.25, option=1)
-    # filtered_image[mask] .= NaN;
-
-    # return (intensity_mean, intensity_variance, filtered_image)
-    return (intensity_mean, intensity_variance, intensity_mean)
+    return (intensity_mean, intensity_variance)
 end
 
-function anisotropic_diffusion(img; niter=1, kappa=50, gamma=0.1, voxelspacing=nothing, option=1)
-    # define conduction gradients functions
-    if option == 1
-        condgradient(delta, spacing) = exp(-(delta/kappa)^2.)/spacing
-    #elseif option == 2
-    #    condgradient(delta, spacing) = 1.0/(1.0+(delta/kappa)^2.0)/Float64(spacing)
-    #elseif option == 3
-    #    kappa_s = kappa * (2**0.5)
-    #    condgradient(delta, spacing) = ifelse(abs.(delta) .<= kappa_s, 0.5*((1.-(delta/kappa_s)**2.)**2.)/Float64(spacing), 0.0)
-    end
-    # initialize output array
-    out = img
+function speckle_reducing_bilateral_filter(input_image::Array{T, 2}, sigma_s::Float64) where T<:Number
+    output_image = similar(input_image)
+    window_size = ceil(Int, 3 * sigma_s)
+    for i in 1:size(input_image, 1)
+        for j in 1:size(input_image, 2)
 
-    # set default voxel spacing if not supplied
-    if voxelspacing == nothing
-        voxelspacing = ones(Float64, length(size(out)))
-    end
-    # initialize some internal variables
-    deltas = [zeros(Float64,size(out)) for k ∈ 1:length(size(out))]
-
-    for _k ∈ 1:niter
-
-        # calculate the diffs
-        for i ∈ 1:length(size(out))
-            slicer = []
-            for j ∈ 1:length(size(out))
-                append!(slicer,j==i ? [[1:size(out)[j]-1...]] : [[1:size(out)[j]...]])
-            end
-            deltas[i][slicer...] = diff(out,dims=i)
-        end
-        # update matrices
-        matrices = [condgradient(deltas[i], voxelspacing[i]) * deltas[i] for i ∈ 1:length(deltas)]
-        # subtract a copy that has been shifted ('Up/North/West' in 3D case) by one
-        # pixel. Don't as questions. just do it. trust me.
-        for i ∈ 1:length(size(out))
-            slicer = []
-            for j ∈ 1:length(size(out))
-                append!(slicer,j==i ? [[2:size(out)[j]...]] : [[1:size(out)[j]...]])
-            end
-            matrices[i][slicer...] = diff(matrices[i],dims=i)
-        end
-        # update the image
-        out = out + gamma * sum(matrices)
-    end
-    return out
-end
-
-
-function speckle_reducing_bilateral_filter(n_rows, n_colums, map, standard_deviation)
-
-    filtered_map = fill(NaN, (n_rows, n_colums))
-
-    spatial_kernel = ImageFiltering.Kernel.gaussian(standard_deviation)
-    kernel_size = size(spatial_kernel)[1]
-
-    padded_map = Images.padarray(map, Images.Pad(:reflect,Int((floor(kernel_size/2))), Int(floor(kernel_size/2))))
-
-    for row=1:n_rows, col=1:n_colums
-        if isnan(map[row, col])
-            continue
-        end
-
-        current_cell_int = map[row, col]
-
-        normalization_factor = 0.0
-        filtered_cell = 0.0
-
-        for i=-Int((floor(kernel_size/2))):Int((floor(kernel_size/2))), j=-Int((floor(kernel_size/2))):Int((floor(kernel_size/2)))
-            if isnan(padded_map[row+i,col+j])
+            if isnan(input_image[i,j])
+                output_image[i,j] = NaN
                 continue
             end
 
-            alpha_squared = (padded_map[row+i,col+j] ^ 2) / 2
-            range_support = (current_cell_int/alpha_squared) * exp(-(current_cell_int^2)/(2*alpha_squared))
-            filtered_cell += padded_map[row+i,col+j] * spatial_kernel[i,j] * range_support
-            normalization_factor += spatial_kernel[i,j] * range_support
+            numerator = 0.0
+            denominator = 0.0
+
+            for k in max(1, i-window_size):min(size(input_image, 1), i+window_size)
+                for l in max(1, j-window_size):min(size(input_image, 2), j+window_size)
+
+                    if isnan(input_image[k,l])
+                        continue
+                    end
+
+                    spatial_sup = exp(-((k-i)^2 + (l-j)^2)/(2*sigma_s^2))
+                    range_sup = (((2 * input_image[i,j]) / (input_image[k,l] ^ 2)) 
+                                * exp(-(input_image[i,j]^2)/(input_image[k,l] ^ 2)) )                 
+                    weight = spatial_sup * range_sup
+                    numerator += input_image[k,l] * weight
+                    denominator += weight
+                end
+            end
+            if denominator == 0 # if no valid pixels in the window, output NaN
+                output_image[i,j] = NaN
+            else
+                output_image[i,j] = numerator / denominator
+            end
         end
+    end
+    return output_image
+end
 
-        filtered_map[row, col] = filtered_cell / normalization_factor
+function bilateral_filter(input_image::Array{T, 2}, sigma_s::Float64, sigma_r::Float64) where T<:Number
+    output_image = similar(input_image)
+    window_size = ceil(Int, 3 * sigma_s)
+    for i in 1:size(input_image, 1)
+        for j in 1:size(input_image, 2)
 
-    end  
+            if isnan(input_image[i,j])
+                output_image[i,j] = NaN
+                continue
+            end
 
-    return filtered_map
+            numerator = 0.0
+            denominator = 0.0
 
+            for k in max(1, i-window_size):min(size(input_image, 1), i+window_size)
+                for l in max(1, j-window_size):min(size(input_image, 2), j+window_size)
+                    
+                    if isnan(input_image[k,l])
+                        continue
+                    end
+
+                    spatial_dist = sqrt((k-i)^2 + (l-j)^2)
+                    range_dist = abs(input_image[i,j] - input_image[k,l])
+                    weight = exp(-spatial_dist^2/(2*sigma_s^2) - range_dist^2/(2*sigma_r^2))
+                    numerator += input_image[k,l] * weight
+                    denominator += weight
+                end
+            end
+
+            if denominator == 0 # if no valid pixels in the window, output NaN
+                output_image[i,j] = NaN
+            else
+                output_image[i,j] = numerator / denominator
+            end
+        end
+    end
+    return output_image
 end
 
 end

@@ -12,8 +12,7 @@ from rclpy.node import Node
 from rclpy.time import Time, Duration
 from nav_msgs.msg import Odometry
 from brov2_interfaces.msg import Sonar as SwathRaw
-from brov2_interfaces.msg import SwathProcessed
-from brov2_interfaces.msg import DVL
+from brov2_interfaces.msg import SwathProcessed, DVL, SwathArray
 
 class SwathProcessingNode(Node):
 
@@ -70,9 +69,12 @@ class SwathProcessingNode(Node):
         self.odom_subscription = self.create_subscription(
             Odometry, odometry_topic_name.value, self.odom_sub, 10
         )
-        self.swath_processed_puplisher  = self.create_publisher(
+        self.swath_processed_puplisher = self.create_publisher(
             SwathProcessed, swath_processed_topic_name.value, 10
             )
+        self.swath_array_publisher = self.create_publisher(
+            SwathArray, 'swath_array', 10
+        )
 
         # Variable initialization
         self.swath_normalizaton_smoothing_param = swath_normalizaton_smoothing_param.value
@@ -90,6 +92,8 @@ class SwathProcessingNode(Node):
         # Number of times we try to interpolate the pose for the newest swath before it gets discarded
         self.n_tries_interpolating_swath_limit = 10
         self.n_tries_interpolating_swath = 0 
+
+        self.swath_array = SwathArray()
 
         self.timer = self.create_timer(processing_period.value, self.process_swaths)
 
@@ -130,6 +134,9 @@ class SwathProcessingNode(Node):
 
         self.swath_processed_puplisher.publish(msg)
 
+    def swath_array_pub(self, msg):
+
+        self.swath_array_publisher.publish(msg)
 
     ### HELPER FUNCTIONS
     def get_first_bottom_returns(self, swath:Swath):
@@ -475,6 +482,21 @@ class SwathProcessingNode(Node):
         swath = self.slant_range_correction(swath)
 
         self.sonar_pub(swath)
+
+        msg = SwathProcessed()
+        msg.header = swath.header
+        msg.odom = swath.odom
+        msg.altitude = swath.altitude
+        msg.data_port = swath.data_port
+        msg.data_stb = swath.data_stb
+
+        self.swath_array.swaths.append(msg)
+
+        if len(self.swath_array.swaths) >= 100:
+            self.swath_array_pub(self.swath_array)
+            self.swath_array = SwathArray()
+
+        
 
         # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
 

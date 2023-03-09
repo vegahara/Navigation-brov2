@@ -25,6 +25,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DVLOdom.msg"
   "msg/Sonar.msg"
   "msg/SwathProcessed.msg"
+  "msg/SwathArray.msg"
   DEPENDENCIES std_msgs geometry_msgs nav_msgs
  )
 

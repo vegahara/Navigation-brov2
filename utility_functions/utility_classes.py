@@ -24,24 +24,18 @@ class SideScanSonar:
 
 
 class Map:
-    def __init__(self, n_rows = 100, n_colums = 100, resolution = 0.1, probability_layer = True) -> None:
+    def __init__(self, n_rows = 100, n_colums = 100, resolution = 0.1, probability_layer = False) -> None:
         self.n_rows = n_rows            # Height of the map in meters
         self.n_colums = n_colums        # Width of the map in meters
         self.resolution = resolution    # Map resolution on meters
         self.origin= None               # The map origin in world coordinates
 
         # Map consisting of processed intensity returns from the sonar. 
-        self.intensity_map = np.zeros(
-            (int(n_rows / resolution), int(n_colums/resolution)), 
-            dtype=float
-        )
+        self.intensity_map = np.full((n_rows, n_colums), np.nan, dtype=float)
 
         # Map where each cell corresponds to the pobability that the cell has been observed
         if probability_layer:
-            self.probability_map = np.zeros(
-                (int(n_rows / resolution), int(n_colums/resolution)), 
-                dtype=float
-            )
+            self.probability_map = np.full((n_rows, n_colums), np.nan, dtype=float)
 
 class Landmark:
     def __init__(self, x, y, height) -> None:
