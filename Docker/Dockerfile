@@ -1,10 +1,10 @@
-FROM osrf/ros:galactic-desktop
+FROM osrf/ros:humble-desktop
 
-RUN apt-get update && apt-get  install -y wget python3-pip && \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y wget python3-pip && \
     python3 -m pip install --upgrade pip
 
 # Install rosbag2 packages
-RUN apt-get update && apt-get install -y ros-galactic-ros2bag ros-galactic-rosbag2-transport
+RUN apt-get update && apt-get install -y ros-humble-ros2bag ros-humble-rosbag2-transport
 
 # Install ncurses lib
 RUN apt-get update && apt-get install -y libncurses5-dev libncursesw5-dev 
@@ -37,7 +37,7 @@ RUN apt-get update && apt-get -y install python3-tk texlive dvipng \
 RUN apt-get update && apt-get -y install tmux
 
 # Source ros
-RUN . /opt/ros/galactic/setup.sh
+RUN . /opt/ros/humble/setup.sh
 
 WORKDIR /home
 

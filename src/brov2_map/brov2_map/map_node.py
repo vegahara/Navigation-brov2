@@ -32,7 +32,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 4890),
+                        ('swaths_per_map', 400),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -131,7 +131,9 @@ class MapNode(Node):
         n_colums = int(np.ceil(
             (max_y - min_y + 2 * self.sonar.range) / self.map_resolution.value
         ))
-        
+
+        print("Generating map")
+
         echo_map, prob_map = generate_map(
             n_rows, n_colums, self.sonar.n_bins, 
             self.map_resolution.value, map_origin_x, map_origin_y, 

@@ -12,8 +12,7 @@ docker run  --rm -it \
             navigation-brov2_im:latest \
             bash -c "cd /home/repo/Navigation-brov2 && \
                 julia scripts/update_pkg.jl && \
-                colcon build --symlink-install && \
+                colcon build --symlink-install --packages-ignore brov2_dvl && \
                 source install/setup.bash && \
-                (jupyter notebook --no-browser --allow-root --notebook-dir=/home/repo/Navigation-brov2 --NotebookApp.token='vegard' &>/dev/null &) && \
                 ./scripts/start_tmux.sh && \
                 bash -l"

@@ -10,12 +10,10 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 import copy
-from time import sleep
 
 from brov2_interfaces.msg import SwathProcessed, SwathArray
 
 from julia.api import Julia
-#import juliacall
 
 jl = Julia(compiled_modules=False)
 jl.eval('import Pkg; Pkg.activate("src/brov2_map/brov2_map/MapGeneration")')
@@ -290,11 +288,6 @@ class LandmarkDetector(Node):
                 best_thresh_ind = i
                 best_var = var
 
-        # Scale back to original range
-        min_int = np.nanmin(im)
-        max_int = np.nanmax(im)
-                
-        # return min_int + (best_thresh / n_bins) * (max_int - min_int)
         return bins[best_thresh_ind+1]
 
     def landmark_detection(self):
@@ -469,8 +462,9 @@ class LandmarkDetector(Node):
 
         if self.fig == None:
             self.fig = plt.figure(figsize=(12, 6))
-
-        plt.clf()
+        else:
+            plt.clf()
+            
         self.ax1 = self.fig.add_subplot(1, 2, 1)
         self.ax2 = self.fig.add_subplot(1, 2, 2)
 
