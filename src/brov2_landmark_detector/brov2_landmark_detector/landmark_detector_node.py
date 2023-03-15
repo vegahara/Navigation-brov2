@@ -128,7 +128,7 @@ class LandmarkDetector(Node):
             altitude=msg.altitude
         )
 
-        self.swath_buffer.append(swath)
+        # self.swath_buffer.append(swath)
 
 
     def swath_array_callback(self, msg):
@@ -296,8 +296,8 @@ class LandmarkDetector(Node):
             return
                 
         swaths = self.swath_buffer
-        self.swath_buffer = []
         self.processed_swaths.extend(copy.deepcopy(swaths))
+        self.swath_buffer = []
         
         map_origin_x, map_origin_y, n_rows, n_colums = \
             self.find_map_origin_and_size(swaths)
@@ -464,7 +464,7 @@ class LandmarkDetector(Node):
             self.fig = plt.figure(figsize=(12, 6))
         else:
             plt.clf()
-            
+
         self.ax1 = self.fig.add_subplot(1, 2, 1)
         self.ax2 = self.fig.add_subplot(1, 2, 2)
 
@@ -472,6 +472,11 @@ class LandmarkDetector(Node):
         self.ax2.imshow(echo_map, cmap='copper', vmin=0.6, vmax=1.4)
         self.ax2.imshow(landmark_candidates_all, cmap='summer')
         self.ax2.imshow(landmark_candidates, cmap='spring')
+
+        print(landmark_candidates.shape)
+        print(n_rows)
+        print(n_colums)
+        print(landmark_candidates[0][0])
 
 
         for landmark in self.landmarks:
@@ -529,7 +534,8 @@ class LandmarkDetector(Node):
         self.ax2.set_xticks(y_locations)
         self.ax2.set_xticklabels(y_labels)
 
-        plt.draw()
-        plt.pause(0.001)
+        # plt.draw()
+        # plt.pause(0.001)
+        plt.show()
 
-        # input('Press any key to continue')
+        input('Press any key to continue')

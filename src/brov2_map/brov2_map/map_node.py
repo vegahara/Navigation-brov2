@@ -32,7 +32,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 400),
+                        ('swaths_per_map', 4890),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )

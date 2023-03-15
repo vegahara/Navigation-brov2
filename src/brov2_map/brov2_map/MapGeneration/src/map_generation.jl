@@ -147,9 +147,9 @@ end
 
 function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, map_origin_y, swaths, sonar_range, sonar_horizontal_beam_spread, swath_ground_resolution)
     
-    to = TimerOutput()
+    # to = TimerOutput()
 
-    @timeit to "map_generation" begin
+    # @timeit to "map_generation" begin
 
     map_origin = SVector(map_origin_x, map_origin_y)        
     swath_locals = [Swath(
@@ -189,7 +189,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         row = Int(floor(-v[1] / map_resolution)) + 1
         colum = Int(floor(v[2] / map_resolution)) + 1
 
-
         cells_to_visit = []
 
         # Do 8 connectivity for first cell
@@ -225,7 +224,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
                 # Add 4-connected neighbor cells to cells_to_visit
                 for new_cell in [[row-1, colum],[row+1, colum],[row, colum-1],[row, colum+1]]
-                    if isassigned(cell_visited, new_cell[1], new_cell[2]) &&
+                    if checkbounds(Bool, cell_visited, new_cell[1], new_cell[2]) &&
                        !cell_visited[new_cell[1], new_cell[2]] &&
                        !(new_cell in cells_to_visit)
                         push!(cells_to_visit, new_cell)
@@ -260,7 +259,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
     k = 4;
     variance_ceiling = 0.05
-    max_distance = 0.2
+    max_distance = 0.3
 
     intensity_map, intensity_variance = knn(
         n_rows, n_colums, intensity_map, 
@@ -275,9 +274,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
 
-    end # Time it end
+    # end # Time it end
 
-    show(to)
+    # show(to)
     
     return intensity_map, probability_map, observed_swaths, range_map
     # return intensity_variance, probability_map
