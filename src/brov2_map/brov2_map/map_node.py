@@ -32,7 +32,7 @@ class MapNode(Node):
                         ('sonar_transducer_theta', pi/4),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 4890),
+                        ('swaths_per_map', 1000),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -97,8 +97,8 @@ class MapNode(Node):
 
         swath = Swath(
             header=msg.header,
-            data_port=np.flip(msg.data_stb),
-            data_stb=np.flip(msg.data_port),
+            data_port=msg.data_port,
+            data_stb=msg.data_stb,
             odom=odom,
             altitude=msg.altitude
         )
@@ -134,12 +134,14 @@ class MapNode(Node):
 
         print("Generating map")
 
-        echo_map, prob_map = generate_map(
-            n_rows, n_colums, self.sonar.n_bins, 
-            self.map_resolution.value, map_origin_x, map_origin_y, 
-            self.swath_buffer, self.sonar.range, 0.5*pi/180, 
-            self.swath_ground_range_resolution.value
-        )
+        for i in range(1):
+            echo_map, prob_map, observed_swaths, range_map= generate_map(
+                n_rows, n_colums, self.sonar.n_bins, 
+                self.map_resolution.value, map_origin_x, map_origin_y, 
+                self.swath_buffer, self.sonar.range, 0.5*pi/180, 
+                self.swath_ground_range_resolution.value,
+                0.2,0.0
+            )
 
         fig = plt.figure(figsize=(12, 6))
 
@@ -180,5 +182,8 @@ class MapNode(Node):
         ax2.set_xticklabels(y_labels)
 
         plt.show()
-    
+
+        # filename = '/home/repo/Navigation-brov2/images/map.csv'
+        # np.savetxt(filename, echo_map, delimiter=',')
+
         input('Press any key to continue')

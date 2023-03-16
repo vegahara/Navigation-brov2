@@ -122,8 +122,8 @@ class LandmarkDetector(Node):
 
         swath = Swath(
             header=msg.header,
-            data_port=np.flip(msg.data_stb),
-            data_stb=np.flip(msg.data_port),
+            data_stb=msg.data_stb,
+            data_port=msg.data_port,
             odom=odom,
             altitude=msg.altitude
         )
@@ -150,8 +150,8 @@ class LandmarkDetector(Node):
 
             swath = Swath(
                 header=m.header,
-                data_port=np.flip(m.data_stb),
-                data_stb=np.flip(m.data_port),
+                data_stb=m.data_stb,
+                data_port=m.data_port,
                 odom=odom,
                 altitude=m.altitude
             )
@@ -307,7 +307,8 @@ class LandmarkDetector(Node):
             n_rows, n_colums, self.sonar.n_bins, 
             self.map_resolution.value, map_origin_x, map_origin_y, 
             swaths, self.sonar.range, 0.5*pi/180, 
-            self.swath_ground_range_resolution.value
+            self.swath_ground_range_resolution.value,
+            0.2, 0.0
         )
      
         echo_map = np.asarray(echo_map, dtype=np.float64)

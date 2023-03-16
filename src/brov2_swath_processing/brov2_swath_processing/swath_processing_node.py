@@ -111,6 +111,9 @@ class SwathProcessingNode(Node):
             altitude=None
         )
 
+        # data_stb=np.flip(np.array([int.from_bytes(b, "big") for b in msg.data_zero],dtype=float)),
+        # data_port=np.flip(np.array([int.from_bytes(b, "big") for b in msg.data_one],dtype=float)),
+
         self.unprocessed_swaths.append(swath)
 
 
@@ -139,22 +142,42 @@ class SwathProcessingNode(Node):
         self.swath_array_publisher.publish(msg)
 
     ### HELPER FUNCTIONS
-    def get_first_bottom_returns(self, swath:Swath):
-        roll, _pitch, _yaw = self.get_roll_pitch_yaw(swath)
-        corr_alt_port = swath.altitude * np.cos(roll) + self.sonar.y_offset * np.sin(roll)
-        corr_alt_stb = swath.altitude * np.cos(roll) - self.sonar.y_offset * np.sin(roll)
+    def get_corrected_sonar_altitude(self, swath:Swath, roll:float, pitch:float):
 
-        range_fbr_port = \
-            corr_alt_port / np.sin(self.sonar.theta + self.sonar.alpha/2 - roll) \
-            - self.sonar.z_offset
-        range_fbr_stb = \
-            corr_alt_stb / np.sin(self.sonar.theta + self.sonar.alpha/2 + roll) \
-            - self.sonar.z_offset 
+        corr_alt_port = ((swath.altitude - self.sonar.x_offset) * \
+                        np.cos(roll) * np.cos(pitch)) + \
+                        self.sonar.x_offset * np.sin(pitch) + \
+                        self.sonar.y_offset * np.sin(roll)
+        corr_alt_stb = ((swath.altitude - self.sonar.x_offset) * \
+                        np.cos(roll) * np.cos(pitch)) + \
+                        self.sonar.x_offset * np.sin(pitch) - \
+                        self.sonar.y_offset * np.sin(roll)
+        
+        return corr_alt_port, corr_alt_stb
+    
+    
+    def get_range_first_bottom_return(self, swath:Swath, roll:float, pitch:float):
 
-        bin_number_fbr_port = int(np.floor_divide(range_fbr_port, self.sonar.slant_resolution))
-        bin_number_fbr_stb = int(np.floor_divide(range_fbr_stb, self.sonar.slant_resolution))
+        corr_alt_port, corr_alt_stb = self.get_corrected_sonar_altitude(
+            swath, roll, pitch
+        )
 
-        return range_fbr_port, range_fbr_stb, bin_number_fbr_port, bin_number_fbr_stb
+        range_fbr_port = corr_alt_port / np.sin(self.sonar.theta + self.sonar.alpha/2 - roll)
+        range_fbr_stb = corr_alt_stb / np.sin(self.sonar.theta + self.sonar.alpha/2 + roll)
+
+        return range_fbr_port, range_fbr_stb
+    
+
+    def get_bin_first_bottom_return(self, swath:Swath, roll:float, pitch:float):
+
+        range_fbr_port, range_fbr_stb = self.get_range_first_bottom_return(
+            swath, roll, pitch
+        )
+
+        bin_fbr_port = int(np.floor_divide(range_fbr_port, self.sonar.slant_resolution))
+        bin_fbr_stb = int(np.floor_divide(range_fbr_stb, self.sonar.slant_resolution))
+
+        return bin_fbr_port, bin_fbr_stb
 
 
     def get_roll_pitch_yaw(self, swath:Swath):
@@ -164,7 +187,7 @@ class SwathProcessingNode(Node):
             swath.odom.pose.pose.orientation.z,
             swath.odom.pose.pose.orientation.w
         ])
-        [yaw, pitch, roll] = r.as_euler('zyx')
+        [yaw, pitch, roll] = r.as_euler('ZYX')
 
         return roll, pitch, yaw
 
@@ -200,6 +223,7 @@ class SwathProcessingNode(Node):
 
         return filtered_data
 
+
     def bilateral_filter(self, data, sigma_c, sigma_s, radius=None):
 
         # make the radius of the filter equal to 4 standard deviations
@@ -227,7 +251,6 @@ class SwathProcessingNode(Node):
         # input('Press any key to continue')
 
         return filtered_data
-
 
 
     ### DATA PROCESSING FUNCTIONS
@@ -335,14 +358,14 @@ class SwathProcessingNode(Node):
         return swath, True
 
 
-    def intensity_correction(self, swath:Swath) -> Swath:
+    def intensity_correction(self, swath:Swath, roll:float, pitch:float) -> Swath:
 
-        _r_port, _r_stb, index_fbr_port, index_fbr_stb = self.get_first_bottom_returns(swath)
+        bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, roll, pitch)
 
-        x = np.linspace(0., self.sonar.n_bins-index_fbr_stb, self.sonar.n_bins-index_fbr_stb)
+        x = np.linspace(0., self.sonar.n_bins-bin_fbr_stb, self.sonar.n_bins-bin_fbr_stb)
         spl_stb = np.flip(csaps(
             x, 
-            np.flip(swath.data_stb[index_fbr_stb:]), 
+            np.flip(swath.data_stb[bin_fbr_stb:]), 
             x, 
             smooth=self.swath_normalizaton_smoothing_param
         ))
@@ -351,12 +374,12 @@ class SwathProcessingNode(Node):
         # plt.plot(spl_stb)
         # plt.show()
         # input('Press any key to continue')
-        swath.data_stb[index_fbr_stb:] = np.divide(swath.data_stb[index_fbr_stb:], spl_stb)
+        swath.data_stb[bin_fbr_stb:] = np.divide(swath.data_stb[bin_fbr_stb:], spl_stb)
 
-        x = np.linspace(0., self.sonar.n_bins-index_fbr_port, self.sonar.n_bins-index_fbr_port)
+        x = np.linspace(0., self.sonar.n_bins-bin_fbr_port, self.sonar.n_bins-bin_fbr_port)
         spl_port = csaps(
             x, 
-            swath.data_port[:-index_fbr_port], 
+            swath.data_port[:-bin_fbr_port], 
             x, 
             smooth=self.swath_normalizaton_smoothing_param
         )
@@ -365,7 +388,7 @@ class SwathProcessingNode(Node):
         # plt.show()
         # input('Press any key to continue')
         
-        swath.data_port[:-index_fbr_port] = np.divide(swath.data_port[:-index_fbr_port], spl_port)
+        swath.data_port[:-bin_fbr_port] = np.divide(swath.data_port[:-bin_fbr_port], spl_port)
 
         # plt.plot(swath.data_port)
         # plt.show()
@@ -373,7 +396,7 @@ class SwathProcessingNode(Node):
         return swath
 
 
-    def intensity_correction_srbf(self, swath:Swath, sigma) -> Swath:
+    def intensity_correction_srbf(self, swath:Swath, sigma:float) -> Swath:
 
         filtered_stb = self.speckle_reducing_bilateral_filter(swath.data_stb, sigma)
         swath.data_stb = np.divide(swath.data_stb, filtered_stb)
@@ -383,7 +406,8 @@ class SwathProcessingNode(Node):
 
         return swath
 
-    def intensity_correction_bf(self, swath:Swath, sigma_c, sigma_s, radius) -> Swath:
+
+    def intensity_correction_bf(self, swath:Swath, sigma_c:float, sigma_s:float, radius:float) -> Swath:
 
         filtered_stb = self.bilateral_filter(swath.data_stb, sigma_c, sigma_s, radius)
         swath.data_stb = np.divide(swath.data_stb, filtered_stb)
@@ -394,7 +418,7 @@ class SwathProcessingNode(Node):
         return swath
 
 
-    def swath_filtering(self, swath:Swath, sigma) -> Swath:
+    def swath_filtering(self, swath:Swath, sigma:float) -> Swath:
         
         swath.data_stb = self.speckle_reducing_bilateral_filter(swath.data_stb, sigma)
         swath.data_port = self.speckle_reducing_bilateral_filter(swath.data_port, sigma)
@@ -402,25 +426,30 @@ class SwathProcessingNode(Node):
         return swath
 
 
-    def blind_zone_removal(self, swath:Swath) -> Swath:
-        _r_port, _r_stb, index_fbr_port, index_fbr_stb = self.get_first_bottom_returns(swath)
+    def blind_zone_removal(self, swath:Swath, roll:float, pitch:float) -> Swath:
+        bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(
+            swath, roll, pitch
+        )
 
-        swath.data_stb[:index_fbr_stb] = [np.nan] * index_fbr_stb
-        swath.data_port[-index_fbr_port:] = [np.nan] * index_fbr_port
+        swath.data_stb[:bin_fbr_stb] = [np.nan] * bin_fbr_stb
+        swath.data_port[-bin_fbr_port:] = [np.nan] * bin_fbr_port
 
         return swath
 
 
-    def slant_range_correction(self, swath:Swath) -> Swath:
+    def slant_range_correction(self, swath:Swath, roll:float, pitch:float) -> Swath:
         # Variation of Burguera et al. 2016, Algorithm 1
-        roll, _pitch, _yaw = self.get_roll_pitch_yaw(swath)
-
+    
         res = self.sonar.slant_resolution
-        horisontal_y_offset = self.sonar.y_offset * np.cos(roll)
-        corr_alt_port = swath.altitude * np.cos(roll) + self.sonar.y_offset * np.sin(roll)
-        corr_alt_stb = swath.altitude * np.cos(roll) - self.sonar.y_offset * np.sin(roll)
+        horisontal_y_offset = self.sonar.y_offset * np.cos(roll) + \
+                              self.sonar.z_offset * np.sin(pitch)
         n_bins = self.sonar.n_bins
-        _r_port, _r_stb, index_fbr_port, index_fbr_stb = self.get_first_bottom_returns(swath)
+        bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(
+            swath, roll, pitch
+        )
+        corr_alt_port, corr_alt_stb = self.get_corrected_sonar_altitude(
+            swath, roll, pitch
+        )
 
         x = np.linspace(
             0,
@@ -429,17 +458,17 @@ class SwathProcessingNode(Node):
         )
 
         ground_ranges_stb = np.array([
-            horisontal_y_offset + np.sqrt((res*b)**2 - corr_alt_stb**2) for b in range(index_fbr_stb,n_bins)
+            horisontal_y_offset + np.sqrt((res*b)**2 - corr_alt_stb**2) for b in range(bin_fbr_stb,n_bins)
         ])
         ground_ranges_port = np.array([
-            horisontal_y_offset + np.sqrt((res*b)**2 - corr_alt_port**2) for b in range(index_fbr_port,n_bins)
+            horisontal_y_offset + np.sqrt((res*b)**2 - corr_alt_port**2) for b in range(bin_fbr_port,n_bins)
         ])
 
         swath.data_stb = np.interp(
-            x, ground_ranges_stb, swath.data_stb[index_fbr_stb:], np.nan, np.nan
+            x, ground_ranges_stb, swath.data_stb[bin_fbr_stb:], np.nan, np.nan
         )
         swath.data_port = np.flip(np.interp(
-            x, ground_ranges_port, np.flip(swath.data_port[:-index_fbr_port]), np.nan, np.nan
+            x, ground_ranges_port, np.flip(swath.data_port[:-bin_fbr_port]), np.nan, np.nan
         ))
 
         return swath
@@ -465,7 +494,9 @@ class SwathProcessingNode(Node):
 
         self.unprocessed_swaths.pop(0)
 
-        range_fbr_port, range_fbr_stb, _b_port, _b_stb = self.get_first_bottom_returns(swath)
+        roll, pitch, _yaw = self.get_roll_pitch_yaw(swath)
+        
+        range_fbr_port, range_fbr_stb = self.get_range_first_bottom_return(swath, roll, pitch)
         if  range_fbr_port > self.sonar.range or range_fbr_stb > self.sonar.range:
             return
 
@@ -475,11 +506,11 @@ class SwathProcessingNode(Node):
 
         # swath = self.swath_filtering(swath, 1.0)
 
-        swath = self.blind_zone_removal(swath)
+        swath = self.blind_zone_removal(swath, roll, pitch)
 
-        swath = self.intensity_correction(swath)
+        swath = self.intensity_correction(swath, roll, pitch)
 
-        swath = self.slant_range_correction(swath)
+        swath = self.slant_range_correction(swath, roll, pitch)
 
         self.sonar_pub(swath)
 
@@ -500,8 +531,13 @@ class SwathProcessingNode(Node):
 
         # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
 
-        # if len(self.processed_swaths) > 400: 
-        #     sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
+        # if len(self.processed_swaths) > 800: 
+        #     sonar_im = np.asarray(self.processed_swaths[400:800], dtype=np.float64)
+
+        #     filename = '/home/repo/Navigation-brov2/images/map_waterfall_only_int_corr.csv'
+        #     np.savetxt(filename, sonar_im, delimiter=',')
+
+        #     input('Press any key to continue')
 
             # hist, _bin_edges = np.histogram(np.nan_to_num(sonar_im).ravel(), bins=200, range=(0.5,1.5))
 
