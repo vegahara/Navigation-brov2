@@ -4,6 +4,7 @@ authors = ["Vegard Haraldstad "]
 version = "0.1.0"
 
 [deps]
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
