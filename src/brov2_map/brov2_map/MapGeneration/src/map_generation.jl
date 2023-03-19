@@ -21,6 +21,7 @@ mutable struct Swath
 end
 
 always_false(i::Int) = false
+const four_nn = [SVector{2,Int}(-1, 0), SVector{2,Int}(1, 0), SVector{2,Int}(0, -1), SVector{2,Int}(0, 1)]
 
 function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, map_origin_y, 
                       swaths, sonar_range, sonar_horizontal_beam_spread, 
@@ -53,7 +54,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
     # Optimized method
     knn_k = 4
-    knn_max_dist = 0.2
+    knn_max_dist = 0.5
     knn_max_variance = 0.05
 
     probability_map = ones(n_rows, n_colums)
@@ -103,65 +104,65 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         cell_coordinates, intensity_values, to
     )
 
-    # # Original method
-    # knn_k = 4
-    # knn_max_dist = 0.2
-    # knn_max_variance = 0.05
+    # Original method
+    knn_k = 4
+    knn_max_dist = 0.2
+    knn_max_variance = 0.05
 
-    # probability_map = ones(n_rows, n_colums)
-    # intensity_map = fill(NaN, (n_rows, n_colums))
-    # range_map = fill(NaN, (n_rows, n_colums))
-    # altitude_map = fill(NaN, (n_rows, n_colums))
-    # intensity_variance = fill(NaN,n_rows,n_colums)
+    probability_map = ones(n_rows, n_colums)
+    intensity_map = fill(NaN, (n_rows, n_colums))
+    range_map = fill(NaN, (n_rows, n_colums))
+    altitude_map = fill(NaN, (n_rows, n_colums))
+    intensity_variance = fill(NaN,n_rows,n_colums)
 
-    # buffer_size = length(swath_locals)
+    buffer_size = length(swath_locals)
 
-    # observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums)
+    observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums)
 
-    # for i=1:n_rows, j=1:n_colums
-    #     observed_swaths[i,j] = fill(-1, buffer_size)
-    # end
+    for i=1:n_rows, j=1:n_colums
+        observed_swaths[i,j] = fill(-1, buffer_size)
+    end
 
-    # observed_swaths_cell = zeros(Int, buffer_size)
-    # probabilities = zeros(Float64, buffer_size)
-    # intensities = zeros(Float64, buffer_size) 
-    # altitudes = zeros(Float64, buffer_size) 
-    # ranges = zeros(Float64, buffer_size) 
+    observed_swaths_cell = zeros(Int, buffer_size)
+    probabilities = zeros(Float64, buffer_size)
+    intensities = zeros(Float64, buffer_size) 
+    altitudes = zeros(Float64, buffer_size) 
+    ranges = zeros(Float64, buffer_size) 
 
-    # cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
-    # intensity_values = zeros(n_rows*n_colums)
+    cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
+    intensity_values = zeros(n_rows*n_colums)
 
-    # cell_local = Array{SVector{2,Float64}}(undef, 2, 2)
+    cell_local = Array{SVector{2,Float64}}(undef, 2, 2)
 
-    # intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_org" generate_map_original!(
-    #     n_rows, n_colums, n_bins, map_resolution, 
-    #     map_origin, swath_locals, sonar_range, 
-    #     sonar_horizontal_beam_spread, swath_ground_resolution,
-    #     knn_k, knn_max_dist, knn_max_variance,
-    #     probability_map, intensity_map, range_map, altitude_map,
-    #     observed_swaths, intensity_variance, cell_local, 
-    #     observed_swaths_cell, probabilities, intensities, 
-    #     altitudes, ranges, cell_coordinates, intensity_values, to
-    # )
+    intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_org" generate_map_original!(
+        n_rows, n_colums, n_bins, map_resolution, 
+        map_origin, swath_locals, sonar_range, 
+        sonar_horizontal_beam_spread, swath_ground_resolution,
+        knn_k, knn_max_dist, knn_max_variance,
+        probability_map, intensity_map, range_map, altitude_map,
+        observed_swaths, intensity_variance, cell_local, 
+        observed_swaths_cell, probabilities, intensities, 
+        altitudes, ranges, cell_coordinates, intensity_values, to
+    )
     
-    # # Raw knn
-    # knn_k = 4
-    # knn_max_dist = 0.3
-    # knn_max_variance = 0.05
+    # Raw knn
+    knn_k = 4
+    knn_max_dist = 0.3
+    knn_max_variance = 0.05
 
-    # intensity_map = fill(NaN, (n_rows, n_colums))
-    # intensity_variance = fill(NaN,n_rows,n_colums)
+    intensity_map = fill(NaN, (n_rows, n_colums))
+    intensity_variance = fill(NaN,n_rows,n_colums)
 
-    # bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
-    # intensity_values = zeros(2 * n_bins * length(swath_locals))
+    bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
+    intensity_values = zeros(2 * n_bins * length(swath_locals))
 
-    # observed_swaths = fill(Int[], (n_rows, n_colums))
-    # range_map = fill(NaN, (n_rows, n_colums))
+    observed_swaths = fill(Int[], (n_rows, n_colums))
+    range_map = fill(NaN, (n_rows, n_colums))
 
-    # intensity_map, intensity_variance = @timeit to "map_generation_knn" generate_map_knn!(
-    #     n_rows, n_colums, n_bins, map_resolution, 
-    #     map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
-    #     swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
+    intensity_map, intensity_variance = @timeit to "map_generation_knn" generate_map_knn!(
+        n_rows, n_colums, n_bins, map_resolution, 
+        map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
+        swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
 
     show(to)
 
@@ -215,6 +216,11 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
 
                 while !isempty(cells_to_visit)
                     row, colum = pop!(cells_to_visit)
+
+                    if cell_visited[row ,colum]
+                        continue
+                    end
+
                     cell_visited[row ,colum] = true
 
                     @timeit to "cell_meas_trans" calculate_cell_measurement_transformation!(
@@ -231,7 +237,7 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                             swath_ground_resolution, n_bins
                         ) :: Float64
 
-                        # @timeit to "vector_pushing" begin
+                        @timeit to "vector_pushing" begin
                             if !isnan(intensity)
                                 indexes[row, colum] += 1
                                 observed_swaths[row, colum][indexes[row,colum]] = swath_index # 0 indexed
@@ -241,18 +247,16 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                                 # ranges[row, colum][indexes[row,colum]] = Statistics.mean(
                                 #     view(cell_transformations, row:row+1, colum:colum+1))[1]
                             end
-                        # end
+                        end
 
-                        # @timeit to "find_new_cells" begin
-                            # Add 4-connected neighbor cells to cells_to_visit
-                            for new_cell in [SVector(row-1, colum),SVector(row+1, colum),SVector(row, colum-1),SVector(row, colum+1)]
-                                if checkbounds(Bool, cell_visited, new_cell[1], new_cell[2]) &&
-                                   !cell_visited[new_cell[1], new_cell[2]] &&
-                                   !(new_cell in cells_to_visit)
+                        @timeit to "find_new_cells" begin
+                            for i=1:4
+                                new_cell = SVector{2,Int}(row,colum) + four_nn[i]
+                                if checkbounds(Bool, cell_visited, new_cell[1], new_cell[2])
                                     push!(cells_to_visit, new_cell)
                                 end
-                            end 
-                        # end
+                            end
+                        end
                     end 
                 end
             end
@@ -386,7 +390,7 @@ function generate_map_original!(n_rows, n_colums, n_bins, map_resolution,
     observed_swaths_cell, probabilities, intensities, 
     altitudes, ranges, cell_coordinates, intensity_values, to)
 
-    cell_global = SVector{Float64, 2}
+    cell_global = SVector{2, Float64}
 
     @timeit to "cell_iteration" begin
         for row=1:n_rows, col=1:n_colums
@@ -444,10 +448,10 @@ function generate_map_original!(n_rows, n_colums, n_bins, map_resolution,
         end
     end
 
-    # @timeit to "map_interpolation" knn_filtering!(
-    #         n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
-    #         intensity_map, intensity_variance, cell_coordinates, intensity_values
-    #     )
+    @timeit to "map_interpolation" knn_filtering!(
+            n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
+            intensity_map, intensity_variance, cell_coordinates, intensity_values
+        )
     
     return intensity_map, probability_map, observed_swaths, range_map
 end
@@ -533,7 +537,7 @@ function get_cell_echo_intensity(cell_local, swath, swath_resolution, n_bins)
 end
 
 function generate_map_knn!(n_rows, n_colums, n_bins, map_resolution, 
-    map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
+    map_origin ::SVector{2,Float64}, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
     swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
 
     @timeit to "setup_data_vectors" begin
@@ -581,7 +585,7 @@ function generate_map_knn!(n_rows, n_colums, n_bins, map_resolution,
 
     idx = Vector{Int}(undef, knn_k)
     dist = Vector{Float64}(undef, knn_k)
-    svals = SVector{Float64, knn_k}
+    svals = SVector{knn_k, Float64}
 
     @timeit to "generate_map" begin
         for row=1:n_rows, col=1:n_colums
@@ -589,12 +593,12 @@ function generate_map_knn!(n_rows, n_colums, n_bins, map_resolution,
             @timeit to "generate_cell" begin 
                 @timeit to "knn" NearestNeighbors.knn_point!(
                     kdtree,
-                    map_origin + SVector(-(row-1)*map_resolution, (col-1)*map_resolution),
+                    map_origin + SVector{2,Float64}(-(row-1)*map_resolution, (col-1)*map_resolution),
                     false, dist, idx, always_false
                 )
 
                 @timeit to "cell_calculation" begin
-                    svals = @timeit to "svals" view(intensity_values, idx[dist .<= knn_max_dist])
+                    svals = view(intensity_values, idx[dist .<= knn_max_dist])
 
                     if length(svals) > 0
                         var = Statistics.var(svals)
@@ -606,6 +610,7 @@ function generate_map_knn!(n_rows, n_colums, n_bins, map_resolution,
                             intensity_variance[row,col] = knn_max_variance
                         end
                     end
+
                 end
             end
         end
@@ -620,25 +625,30 @@ function knn_filtering!(n_rows, n_colums, map_resolution, knn_k, knn_max_dist, k
     n_cells = 0
 
     for row=1:n_rows, col=1:n_colums
-        if !isnan(intensity_map[row,col])
-            n_cells += 1
-            cell_coordinates[n_cells] = SVector((row-1)*map_resolution, (col-1)*map_resolution)
-            intensity_values[n_cells] = intensity_map[row,col]
+        if isnan(intensity_map[row,col])
+            continue
         end
+
+        n_cells += 1
+        cell_coordinates[n_cells] = SVector((row-1)*map_resolution, (col-1)*map_resolution)
+        intensity_values[n_cells] = intensity_map[row,col]
     end
 
-    kdtree = NearestNeighbors.KDTree(view(cell_coordinates,1:n_cells), Distances.Euclidean())
-
-    idx = zeros(Int, knn_k)
-    dist = zeros(Float64, knn_k)
-    svals = SVector{Float64, knn_k}
+    kdtree = NearestNeighbors.KDTree(
+        view(cell_coordinates, 1:n_cells), 
+        Distances.Euclidean()
+    )
+    
+    idx = Vector{Int}(undef, knn_k)
+    dist = Vector{Float64}(undef, knn_k)
+    svals = SVector{knn_k, Float64}
 
     for row=1:n_rows, col=1:n_colums
         if !isnan(intensity_map[row,col])
             continue
         end
 
-        idx, dist = NearestNeighbors.knn_point!(
+        NearestNeighbors.knn_point!(
             kdtree,
             SVector((row-1)*map_resolution, (col-1)*map_resolution),
             false, dist, idx, always_false
@@ -657,9 +667,8 @@ function knn_filtering!(n_rows, n_colums, map_resolution, knn_k, knn_max_dist, k
             end
         end
     end
-    
-    return intensity_map, intensity_variance
 end
+
 
 function speckle_reducing_bilateral_filter(input_image::Array{T, 2}, sigma_s::Float64) where T<:Number
     output_image = similar(input_image)
