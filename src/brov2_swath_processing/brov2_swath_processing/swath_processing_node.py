@@ -28,11 +28,11 @@ class SwathProcessingNode(Node):
             ('swath_ground_range_resolution', 0.03),
             ('sonar_n_bins', 1000),
             ('sonar_range', 30),
-            ('sonar_transducer_theta', np.pi/4),
+            ('sonar_transducer_theta', (25 * np.pi) / 180),
             ('sonar_transducer_alpha', np.pi/3),
-            ('sonar_x_offset', 0.2),
-            ('sonar_y_offset', 0.105),
-            ('sonar_z_offset', 0.0)
+            ('sonar_x_offset', -0.2532),
+            ('sonar_y_offset', 0.82),
+            ('sonar_z_offset', 0.033)
         ])
             
         (swath_raw_topic_name, swath_processed_topic_name, 
@@ -83,6 +83,7 @@ class SwathProcessingNode(Node):
         self.unprocessed_altitudes = []
         self.unprocessed_odoms = []
         self.processed_swaths = []
+        self.processed_swaths_bf =[]
         self.sonar = SideScanSonar(
             sonar_n_bins.value, sonar_range.value,
             sonar_transducer_theta.value,sonar_transducer_alpha.value,
@@ -144,11 +145,11 @@ class SwathProcessingNode(Node):
     ### HELPER FUNCTIONS
     def get_corrected_sonar_altitude(self, swath:Swath, roll:float, pitch:float):
 
-        corr_alt_port = ((swath.altitude - self.sonar.x_offset) * \
+        corr_alt_port = ((swath.altitude - self.sonar.z_offset) * \
                         np.cos(roll) * np.cos(pitch)) + \
                         self.sonar.x_offset * np.sin(pitch) + \
                         self.sonar.y_offset * np.sin(roll)
-        corr_alt_stb = ((swath.altitude - self.sonar.x_offset) * \
+        corr_alt_stb = ((swath.altitude - self.sonar.z_offset) * \
                         np.cos(roll) * np.cos(pitch)) + \
                         self.sonar.x_offset * np.sin(pitch) - \
                         self.sonar.y_offset * np.sin(roll)
@@ -236,7 +237,7 @@ class SwathProcessingNode(Node):
             j = np.arange(-radius, radius+1)
 
             # Reflecting the borders of the signal
-            j = np.where(i + j < 0, abs(j), j)
+            j = np.where(i + j < 0, -j, j)
             j = np.where(i + j > len(data)-1, -j, j)
 
             spatial_support = np.exp((-(j)**2)/(2*sigma_c**2))
@@ -407,13 +408,16 @@ class SwathProcessingNode(Node):
         return swath
 
 
-    def intensity_correction_bf(self, swath:Swath, sigma_c:float, sigma_s:float, radius:float) -> Swath:
+    def intensity_correction_bf(self, swath:Swath, roll:float, pitch:float, sigma_c:float, 
+                                sigma_s:float, radius:float=None) -> Swath:
 
-        filtered_stb = self.bilateral_filter(swath.data_stb, sigma_c, sigma_s, radius)
-        swath.data_stb = np.divide(swath.data_stb, filtered_stb)
+        bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, roll, pitch)
 
-        filtered_port = self.bilateral_filter(swath.data_port ,sigma_c, sigma_s, radius)
-        swath.data_port = np.divide(swath.data_port, filtered_port)
+        filtered_stb = np.flip(self.bilateral_filter(np.flip(swath.data_stb[bin_fbr_stb:]), sigma_c, sigma_s, radius))
+        swath.data_stb[bin_fbr_stb:] = np.divide(swath.data_stb[bin_fbr_stb:], filtered_stb)
+
+        filtered_port = self.bilateral_filter(swath.data_port[:-bin_fbr_port] ,sigma_c, sigma_s, radius)
+        swath.data_port[:-bin_fbr_port] = np.divide(swath.data_port[:-bin_fbr_port], filtered_port)
 
         return swath
 
@@ -442,7 +446,7 @@ class SwathProcessingNode(Node):
     
         res = self.sonar.slant_resolution
         horisontal_y_offset = self.sonar.y_offset * np.cos(roll) + \
-                              self.sonar.z_offset * np.sin(pitch)
+                              self.sonar.z_offset * np.sin(roll)
         n_bins = self.sonar.n_bins
         bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(
             swath, roll, pitch
@@ -502,15 +506,15 @@ class SwathProcessingNode(Node):
 
         # swath = self.intensity_correction_srbf(swath, 5.0)
 
-        # swath = self.intensity_correction_bf(swath, 40.0, 20.0, 20)
-
         # swath = self.swath_filtering(swath, 1.0)
 
         swath = self.blind_zone_removal(swath, roll, pitch)
 
+        # swath_bf = self.intensity_correction_bf(swath, roll, pitch, 20.0, 100.0)
+
         swath = self.intensity_correction(swath, roll, pitch)
 
-        swath = self.slant_range_correction(swath, roll, pitch)
+        # swath = self.slant_range_correction(swath, roll, pitch)
 
         self.sonar_pub(swath)
 
@@ -530,27 +534,30 @@ class SwathProcessingNode(Node):
         
 
         # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
+        # self.processed_swaths_bf.append(np.append(swath_bf.data_port, swath_bf.data_stb))
 
         # if len(self.processed_swaths) > 800: 
-        #     sonar_im = np.asarray(self.processed_swaths[400:800], dtype=np.float64)
+        #     sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
+            #sonar_im_bf = np.asarray(self.processed_swaths_bf, dtype=np.float64)
 
-        #     filename = '/home/repo/Navigation-brov2/images/map_waterfall_only_int_corr.csv'
-        #     np.savetxt(filename, sonar_im, delimiter=',')
+            # filename = '/home/repo/Navigation-brov2/images/map_waterfall_only_int_corr.csv'
+            # np.savetxt(filename, sonar_im, delimiter=',')
 
-        #     input('Press any key to continue')
+            # input('Press any key to continue')
 
-            # hist, _bin_edges = np.histogram(np.nan_to_num(sonar_im).ravel(), bins=200, range=(0.5,1.5))
+            # hist, _bin_edges = np.histogram(sonar_im[~np.isnan(sonar_im)], bins=200, range=(0.5,1.5))
 
             # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10,5))
 
             # ax1.imshow(sonar_im, cmap='copper', vmin=0.6 , vmax=1.4)
-            # ax2.plot(hist)
+            #ax2.imshow(sonar_im_bf, cmap='copper', vmin=0.6 , vmax=1.4)
+            # ax2.plot(hist / len(sonar_im[~np.isnan(sonar_im)]))
             # ax2.set_xlim([-1, 201])
             # ax2.set_xticks(np.arange(0, 201, 20))
             # ax2.set_xticklabels([f'{x:.1f}' for x in np.arange(0.5, 1.5001, 0.1)])
             
 
-            # plt.imshow(sonar_im, cmap='copper')
+            #plt.imshow(sonar_im, cmap='copper')
             # plt.show()
 
             # input('Press any key to continue')

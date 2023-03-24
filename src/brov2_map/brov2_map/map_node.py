@@ -8,6 +8,7 @@ import numpy as np
 from math import pi
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tick
+from scipy.spatial.transform import Rotation as R
 
 from rclpy.node import Node
 
@@ -29,15 +30,15 @@ class MapNode(Node):
             parameters=[('processed_swath_topic', 'swath_processed'),
                         ('sonar_n_bins', 1000),
                         ('sonar_range', 30),
-                        ('sonar_transducer_theta', pi/4),
+                        ('sonar_transducer_theta', (25 * pi) / 180),
                         ('sonar_transducer_alpha', pi/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 1000),
+                        ('swaths_per_map', 400),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
-                      
-        (processed_swath_topic, 
+
+        (processed_swath_topic,
         sonar_n_bins,
         sonar_range,
         sonar_transducer_theta,
@@ -48,7 +49,7 @@ class MapNode(Node):
         processing_period,
         ) = \
         self.get_parameters([
-            'processed_swath_topic', 
+            'processed_swath_topic',
             'sonar_n_bins',
             'sonar_range',
             'sonar_transducer_theta',
@@ -60,14 +61,14 @@ class MapNode(Node):
         ])
 
         self.processed_swath_sub = self.create_subscription(
-            SwathProcessed, 
-            processed_swath_topic.value, 
-            self.processed_swath_callback, 
+            SwathProcessed,
+            processed_swath_topic.value,
+            self.processed_swath_callback,
             qos_profile = 10
         )
 
         self.sonar = SideScanSonar(
-            sonar_n_bins.value, sonar_range.value, 
+            sonar_n_bins.value, sonar_range.value,
             sonar_transducer_theta.value, sonar_transducer_alpha.value
         )
 
@@ -80,17 +81,18 @@ class MapNode(Node):
         self.get_logger().info("Map node initialized.")
 
     def processed_swath_callback(self, msg):
-        pitch, yaw = utility_functions.pitch_yaw_from_quaternion(
-            msg.odom.pose.pose.orientation.w, 
-            msg.odom.pose.pose.orientation.x, 
-            msg.odom.pose.pose.orientation.y, 
-            msg.odom.pose.pose.orientation.z
-        )
+        r = R.from_quat([
+            msg.odom.pose.pose.orientation.x,
+            msg.odom.pose.pose.orientation.y,
+            msg.odom.pose.pose.orientation.z,
+            msg.odom.pose.pose.orientation.w
+        ])
+        [yaw, pitch, roll] = r.as_euler('ZYX')
 
         odom = [
             msg.odom.pose.pose.position.x,
             msg.odom.pose.pose.position.y,
-            0, # We dont use roll in map generation
+            roll,
             pitch,
             yaw
         ]
@@ -136,21 +138,26 @@ class MapNode(Node):
 
         for i in range(1):
             echo_map, prob_map, observed_swaths, range_map= generate_map(
-                n_rows, n_colums, self.sonar.n_bins, 
-                self.map_resolution.value, map_origin_x, map_origin_y, 
-                self.swath_buffer, self.sonar.range, 0.5*pi/180, 
+                n_rows, n_colums, self.sonar.n_bins,
+                self.map_resolution.value, map_origin_x, map_origin_y,
+                self.swath_buffer, self.sonar.range, 0.5*pi/180,
                 self.swath_ground_range_resolution.value,
                 0.2,0.0
             )
+
+        print
+
+        # filename = '/home/repo/Navigation-brov2/images/map_400_swaths_5_cm_res_new_method.csv'
+        # np.savetxt(filename, echo_map, delimiter=',')
 
         fig = plt.figure(figsize=(12, 6))
 
         ax1 = fig.add_subplot(1, 2, 1)
         ax1.imshow(echo_map, cmap='copper', vmin=0.6, vmax=1.4)
 
-        ax2 = fig.add_subplot(1, 2, 2)
+        # ax2 = fig.add_subplot(1, 2, 2)
         #For probability map
-        ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
+        # ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
         # For variance map
         # ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=0.05)
         # For inverse map
@@ -176,14 +183,13 @@ class MapNode(Node):
         ax1.set_yticklabels(x_labels)
         ax1.set_xticks(y_locations)
         ax1.set_xticklabels(y_labels)
-        ax2.set_yticks(x_locations)
-        ax2.set_yticklabels(x_labels)
-        ax2.set_xticks(y_locations)
-        ax2.set_xticklabels(y_labels)
+        # ax2.set_yticks(x_locations)
+        # ax2.set_yticklabels(x_labels)
+        # ax2.set_xticks(y_locations)
+        # ax2.set_xticklabels(y_labels)
 
         plt.show()
 
-        # filename = '/home/repo/Navigation-brov2/images/map.csv'
-        # np.savetxt(filename, echo_map, delimiter=',')
+
 
         input('Press any key to continue')
