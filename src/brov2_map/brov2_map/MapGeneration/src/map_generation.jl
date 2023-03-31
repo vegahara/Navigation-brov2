@@ -24,14 +24,14 @@ always_false(i::Int) = false
 const four_nn = [SVector{2,Int}(-1, 0), SVector{2,Int}(1, 0), SVector{2,Int}(0, -1), SVector{2,Int}(0, 1)]
 
 function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, map_origin_y, 
-                      swaths, sonar_range, sonar_horizontal_beam_spread, 
-                      swath_ground_resolution, sonar_x_offset, sonar_z_offset)
+                      swaths, sonar_range, swath_ground_resolution)
     
     to = TimerOutput()
 
     swath_slant_resolution = 0.03
     sonar_theta = (25 * pi) / 180
     sonar_alpha = pi / 3
+    sonar_beta = (0.5 * pi) / 180
     sonar_x_offset = -0.2532
     sonar_y_offset = 0.082
     sonar_z_offset = 0.033
@@ -68,46 +68,30 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # probability_map = ones(n_rows, n_colums)
     probability_map = NaN
     intensity_map = fill(NaN, (n_rows, n_colums))
-    # range_map = fill(NaN, (n_rows, n_colums))
-    # altitude_map = fill(NaN, (n_rows, n_colums))
-    range_map = NaN
-    altitude_map = NaN
+    range_map = fill(NaN, (n_rows, n_colums))
+    # range_map = NaN
     # intensity_variance = fill(NaN,n_rows,n_colums)
     intensity_variance = NaN
 
-    # probabilities = fill(Float64[], (n_rows, n_colums))
-    # intensities = fill(Float64[], (n_rows, n_colums))
-    # altitudes = fill(Float64[], (n_rows, n_colums))
-    # ranges = fill(Float64[], (n_rows, n_colums))  
-
-    # observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums) 
-    observed_swaths = NaN
+    observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums) 
     probabilities = Array{Vector{Float64}}(undef, n_rows, n_colums)
     intensities = Array{Vector{Float64}}(undef, n_rows, n_colums)
-    # altitudes = Array{Vector{Float64}}(undef, n_rows, n_colums)
-    # ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
-    altitudes = NaN
-    ranges = NaN
+    ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
     indexes = zeros(Int, n_rows, n_colums)
 
-    # buffer_size = Int(ceil(length(swath_locals)))
-    buffer_size = Int(ceil(length(swath_locals) * 0.35))
+    buffer_size = Int(ceil(length(swath_locals)))
+    # buffer_size = Int(ceil(length(swath_locals) * 0.35))
     # buffer_size = 400
 
     for i=1:n_rows, j=1:n_colums
-        # observed_swaths[i,j] = fill(-1, buffer_size)
+        observed_swaths[i,j] = fill(-1, buffer_size)
         probabilities[i,j] = zeros(Float64, buffer_size)
         intensities[i,j] = zeros(Float64, buffer_size)
-        # altitudes[i,j] = zeros(Float64, buffer_size)
-        # ranges[i,j] = zeros(Float64, buffer_size)
+        ranges[i,j] = zeros(Float64, buffer_size)
     end
 
     cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
     intensity_values = zeros(n_rows*n_colums)
-
-    println(Int((20*2*sonar_range)/map_resolution))
-    println(n_rows)
-    println(n_colums)
 
     cell_transformations = Array{SVector{2,Float64}}(undef, n_rows+1, n_colums+1)
     cell_visited = Array{Bool}(undef, n_rows, n_colums)
@@ -116,10 +100,10 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_opt_new" generate_map_optimized_new!(
         n_rows, n_colums, n_bins, map_resolution, 
         map_origin, swath_locals, sonar_range, 
-        sonar_horizontal_beam_spread, swath_slant_resolution,
+        sonar_beta, swath_slant_resolution,
         knn_k, knn_max_dist, knn_max_variance,
-        probability_map, intensity_map, range_map, altitude_map,
-        observed_swaths, probabilities, intensities, altitudes, ranges,
+        probability_map, intensity_map, range_map,
+        observed_swaths, probabilities, intensities, ranges,
         cell_transformations, intensity_variance, 
         cell_visited, cells_to_visit, indexes, 
         cell_coordinates, intensity_values, 
@@ -136,24 +120,19 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # probability_map = NaN
     # intensity_map = fill(NaN, (n_rows, n_colums))
     # # range_map = fill(NaN, (n_rows, n_colums))
-    # # altitude_map = fill(NaN, (n_rows, n_colums))
     # range_map = NaN
-    # altitude_map = NaN
     # # intensity_variance = fill(NaN,n_rows,n_colums)
     # intensity_variance = NaN
 
     # # probabilities = fill(Float64[], (n_rows, n_colums))
     # # intensities = fill(Float64[], (n_rows, n_colums))
-    # # altitudes = fill(Float64[], (n_rows, n_colums))
     # # ranges = fill(Float64[], (n_rows, n_colums))  
 
     # # observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums) 
     # observed_swaths = NaN
     # probabilities = Array{Vector{Float64}}(undef, n_rows, n_colums)
     # intensities = Array{Vector{Float64}}(undef, n_rows, n_colums)
-    # # altitudes = Array{Vector{Float64}}(undef, n_rows, n_colums)
     # # ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
-    # altitudes = NaN
     # ranges = NaN
     # indexes = zeros(Int, n_rows, n_colums)
 
@@ -163,7 +142,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     #     #observed_swaths[i,j] = fill(-1, buffer_size)
     #     probabilities[i,j] = zeros(Float64, buffer_size)
     #     intensities[i,j] = zeros(Float64, buffer_size)
-    #     # altitudes[i,j] = zeros(Float64, buffer_size)
     #     # ranges[i,j] = zeros(Float64, buffer_size)
     # end
 
@@ -177,10 +155,10 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_opt" generate_map_optimized!(
     #     n_rows, n_colums, n_bins, map_resolution, 
     #     map_origin, swath_locals, sonar_range, 
-    #     sonar_horizontal_beam_spread, swath_ground_resolution,
+    #     sonar_beta, swath_ground_resolution,
     #     knn_k, knn_max_dist, knn_max_variance,
-    #     probability_map, intensity_map, range_map, altitude_map,
-    #     observed_swaths, probabilities, intensities, altitudes, ranges,
+    #     probability_map, intensity_map, range_map,
+    #     observed_swaths, probabilities, intensities, ranges,
     #     cell_transformations, intensity_variance, 
     #     cell_visited, cells_to_visit, indexes, 
     #     cell_coordinates, intensity_values, to
@@ -194,7 +172,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # probability_map = ones(n_rows, n_colums)
     # intensity_map = fill(NaN, (n_rows, n_colums))
     # range_map = fill(NaN, (n_rows, n_colums))
-    # altitude_map = fill(NaN, (n_rows, n_colums))
     # intensity_variance = fill(NaN,n_rows,n_colums)
 
     # buffer_size = length(swath_locals)
@@ -208,7 +185,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # observed_swaths_cell = zeros(Int, buffer_size)
     # probabilities = zeros(Float64, buffer_size)
     # intensities = zeros(Float64, buffer_size) 
-    # altitudes = zeros(Float64, buffer_size) 
     # ranges = zeros(Float64, buffer_size) 
 
     # cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
@@ -219,12 +195,12 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_org" generate_map_original!(
     #     n_rows, n_colums, n_bins, map_resolution, 
     #     map_origin, swath_locals, sonar_range, 
-    #     sonar_horizontal_beam_spread, swath_ground_resolution,
+    #     sonar_beta, swath_ground_resolution,
     #     knn_k, knn_max_dist, knn_max_variance,
-    #     probability_map, intensity_map, range_map, altitude_map,
+    #     probability_map, intensity_map, range_map,
     #     observed_swaths, intensity_variance, cell_local, 
     #     observed_swaths_cell, probabilities, intensities, 
-    #     altitudes, ranges, cell_coordinates, intensity_values, to
+    #     ranges, cell_coordinates, intensity_values, to
     # )
     
     # # Raw knn
@@ -246,7 +222,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     #     map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
     #     swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
 
-    show(to)
+    # show(to)
 
     # intensity_map = speckle_reducing_bilateral_filter(intensity_map, 0.1)
     # intensity_map = speckle_reducing_bilateral_filter(intensity_map, 0.3)
@@ -263,10 +239,10 @@ end
 
 function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution, 
     map_origin, swath_locals, sonar_range, 
-    sonar_horizontal_beam_spread, swath_ground_resolution,
+    sonar_beta, swath_ground_resolution,
     knn_k, knn_max_dist, knn_max_variance,
-    probability_map, intensity_map, range_map, altitude_map,
-    observed_swaths, probabilities, intensities, altitudes, ranges,
+    probability_map, intensity_map, range_map,
+    observed_swaths, probabilities, intensities, ranges,
     cell_transformations, intensity_variance, 
     cell_visited, cells_to_visit, indexes, 
     cell_coordinates, intensity_values, to)
@@ -310,7 +286,7 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                     )
 
                     prob_observation = @timeit to "cell_probability" get_cell_probability_gaussian(
-                        cell_transformations, row, colum, sonar_range, sonar_horizontal_beam_spread
+                        cell_transformations, row, colum, sonar_range, sonar_beta
                     ) :: Float64
 
                     if prob_observation >= 0.1
@@ -322,12 +298,11 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                         @timeit to "vector_pushing" begin
                             if !isnan(intensity)
                                 indexes[row, colum] += 1
-                                # observed_swaths[row, colum][indexes[row,colum]] = swath_index # 0 indexed
+                                observed_swaths[row, colum][indexes[row,colum]] = swath_index # 0 indexed
                                 probabilities[row, colum][indexes[row,colum]] = prob_observation
                                 intensities[row, colum][indexes[row,colum]] = intensity
-                                # altitudes[row, colum][indexes[row,colum]] = swath.altitude
-                                # ranges[row, colum][indexes[row,colum]] = Statistics.mean(
-                                #     view(cell_transformations, row:row+1, colum:colum+1))[1]
+                                ranges[row, colum][indexes[row,colum]] = Statistics.mean(
+                                    view(cell_transformations, row:row+1, colum:colum+1))[1]
                             end
                         end
 
@@ -361,8 +336,7 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
             )
 
             # probability_map[row, colum] *= prod(1 .- view(probabilities[row, colum], 1:index))
-            # range_map[row, colum] = Statistics.mean(view(ranges[row, colum], 1:index))
-            # altitude_map[row, colum] = Statistics.mean(view(altitudes[row, colum], 1:index))
+            range_map[row, colum] = Statistics.mean(view(ranges[row, colum], 1:index))
         end
     end
 
@@ -377,18 +351,15 @@ end
 
 function generate_map_optimized_new!(n_rows, n_colums, n_bins, map_resolution, 
     map_origin, swath_locals, sonar_range, 
-    sonar_horizontal_beam_spread, swath_slant_resolution,
+    sonar_beta, swath_slant_resolution,
     knn_k, knn_max_dist, knn_max_variance,
-    probability_map, intensity_map, range_map, altitude_map,
-    observed_swaths, probabilities, intensities, altitudes, ranges,
+    probability_map, intensity_map, range_map,
+    observed_swaths, probabilities, intensities, ranges,
     cell_transformations, intensity_variance, 
     cell_visited, cells_to_visit, indexes, cell_coordinates, intensity_values, 
     sonar_theta, sonar_alpha, sonar_x_offset, sonar_y_offset, sonar_z_offset, to)
 
     @timeit to "swath_iteration" begin
-
-        max_length_buffer = length(cells_to_visit)
-        println(max_length_buffer)
 
         for (swath, swath_index) in zip(swath_locals, 0:length(swath_locals)-1) # 0 indexed
 
@@ -444,7 +415,7 @@ function generate_map_optimized_new!(n_rows, n_colums, n_bins, map_resolution,
                     )
 
                     prob_observation = @timeit to "cell_probability" get_cell_probability_gaussian(
-                        cell_transformations, row, colum, sonar_range, sonar_horizontal_beam_spread
+                        cell_transformations, row, colum, sonar_range, sonar_beta
                     ) :: Float64
 
                     if prob_observation >= 0.05
@@ -458,12 +429,11 @@ function generate_map_optimized_new!(n_rows, n_colums, n_bins, map_resolution,
                         @timeit to "vector_pushing" begin
                             if !isnan(intensity)
                                 indexes[row, colum] += 1
-                                # observed_swaths[row, colum][indexes[row,colum]] = swath_index # 0 indexed
+                                observed_swaths[row, colum][indexes[row,colum]] = swath_index # 0 indexed
                                 probabilities[row, colum][indexes[row,colum]] = prob_observation
                                 intensities[row, colum][indexes[row,colum]] = intensity
-                                # altitudes[row, colum][indexes[row,colum]] = swath.altitude
-                                # ranges[row, colum][indexes[row,colum]] = Statistics.mean(
-                                #     view(cell_transformations, row:row+1, colum:colum+1))[1]
+                                ranges[row, colum][indexes[row,colum]] = Statistics.mean(
+                                    view(cell_transformations, row:row+1, colum:colum+1))[1]
                             end
                         end
 
@@ -475,14 +445,11 @@ function generate_map_optimized_new!(n_rows, n_colums, n_bins, map_resolution,
                                 end
                             end
                         end
-                        max_length_buffer = max(max_length_buffer, length(cells_to_visit))
                     end 
                 end
             end
         end
     end
-
-    println(max_length_buffer)
 
     @timeit to "map_iteration" begin
         for row=1:n_rows, colum=1:n_colums
@@ -500,8 +467,7 @@ function generate_map_optimized_new!(n_rows, n_colums, n_bins, map_resolution,
             )
 
             # probability_map[row, colum] *= prod(1 .- view(probabilities[row, colum], 1:index))
-            # range_map[row, colum] = Statistics.mean(view(ranges[row, colum], 1:index))
-            # altitude_map[row, colum] = Statistics.mean(view(altitudes[row, colum], 1:index))
+            range_map[row, colum] = Statistics.mean(view(ranges[row, colum], 1:index))
         end
     end
 
@@ -537,7 +503,7 @@ end
 
 
 function get_cell_probability_gaussian(cell_transformations, row, colum, 
-                                       sonar_range, sonar_horizontal_beam_spread)
+                                       sonar_range, sonar_beta)
     
     # Correct differently for port and starboard swath 
     # Transducers assumed to be pointing in yz-plane of body frame
@@ -555,7 +521,7 @@ function get_cell_probability_gaussian(cell_transformations, row, colum,
     end
 
     if max_r < sonar_range && (max_theta - min_theta) < pi
-        d = Distributions.Normal(0.0, sonar_horizontal_beam_spread)
+        d = Distributions.Normal(0.0, sonar_beta)
         return Distributions.cdf(d, max_theta) - Distributions.cdf(d, min_theta)
     else
         return 0.0
@@ -662,12 +628,12 @@ end
 
 function generate_map_original!(n_rows, n_colums, n_bins, map_resolution, 
     map_origin, swath_locals, sonar_range, 
-    sonar_horizontal_beam_spread, swath_ground_resolution,
+    sonar_beta, swath_ground_resolution,
     knn_k, knn_max_dist, knn_max_variance,
-    probability_map, intensity_map, range_map, altitude_map,
+    probability_map, intensity_map, range_map,
     observed_swaths, intensity_variance, cell_local, 
     observed_swaths_cell, probabilities, intensities, 
-    altitudes, ranges, cell_coordinates, intensity_values, to)
+    ranges, cell_coordinates, intensity_values, to)
 
     cell_global = SVector{2, Float64}
 
@@ -691,7 +657,7 @@ function generate_map_original!(n_rows, n_colums, n_bins, map_resolution,
                         cell_local, cell_global, swath.odom, map_resolution
                     )
                     prob_observation = @timeit to "cell_probability" get_cell_probability_gaussian(
-                        cell_local, sonar_range, sonar_horizontal_beam_spread
+                        cell_local, sonar_range, sonar_beta
                     ) :: Float64
 
                     if prob_observation >= 0.1
@@ -703,7 +669,6 @@ function generate_map_original!(n_rows, n_colums, n_bins, map_resolution,
                             index += 1
                             intensities[index] = intensity
                             probabilities[index] = prob_observation
-                            altitudes[index] = swath.altitude
                             ranges[index] = Statistics.mean(cell_local)[1]
                             observed_swaths_cell[index] = swath_number
                             probability *= (1 - prob_observation)
@@ -720,7 +685,6 @@ function generate_map_original!(n_rows, n_colums, n_bins, map_resolution,
                     )
                     probability_map[row,col] = probability
                     range_map[row,col] = Statistics.mean(view(ranges, 1:index))
-                    altitude_map[row,col] = Statistics.mean(view(altitudes, 1:index))
                     observed_swaths[row,col] = view(observed_swaths_cell, 1:index)
                 end
             end
@@ -754,7 +718,7 @@ function get_cell_coordinates!(cell_local, cell_global, measurement_frame, map_r
 end
 
 
-function get_cell_probability_gaussian(cell_local, sonar_range, sonar_horizontal_beam_spread)
+function get_cell_probability_gaussian(cell_local, sonar_range, sonar_beta)
     
     # Correct differently for port and starboard swath 
     # Transducers assumed to be pointing in yz-plane of body frame
@@ -772,7 +736,7 @@ function get_cell_probability_gaussian(cell_local, sonar_range, sonar_horizontal
     end
  
     if max_r < sonar_range && (max_theta - min_theta) < pi
-        d = Distributions.Normal(0.0, sonar_horizontal_beam_spread)
+        d = Distributions.Normal(0.0, sonar_beta)
         return Distributions.cdf(d, max_theta) - Distributions.cdf(d, min_theta)
     else
         return 0.0

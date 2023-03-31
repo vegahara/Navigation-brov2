@@ -1,0 +1,7 @@
+name = "Slam"
+uuid = "60b4debb-75d8-4355-ab23-215ce04e628d"
+authors = ["Unknown "]
+version = "0.1.0"
+
+[deps]
+Caesar = "62eebf14-49bc-5f46-9df9-f7b7ef379406"

@@ -32,6 +32,7 @@ class MapNode(Node):
                         ('sonar_range', 30),
                         ('sonar_transducer_theta', (25 * pi) / 180),
                         ('sonar_transducer_alpha', pi/3),
+                        ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
                         ('swaths_per_map', 400),
                         ('map_resolution', 0.1),
@@ -43,6 +44,7 @@ class MapNode(Node):
         sonar_range,
         sonar_transducer_theta,
         sonar_transducer_alpha,
+        sonar_transducer_beta,
         self.swath_ground_range_resolution,
         self.swaths_per_map,
         self.map_resolution,
@@ -54,6 +56,7 @@ class MapNode(Node):
             'sonar_range',
             'sonar_transducer_theta',
             'sonar_transducer_alpha',
+            'sonar_transducer_beta',
             'swath_ground_range_resolution',
             'swaths_per_map',
             'map_resolution',
@@ -69,7 +72,8 @@ class MapNode(Node):
 
         self.sonar = SideScanSonar(
             sonar_n_bins.value, sonar_range.value,
-            sonar_transducer_theta.value, sonar_transducer_alpha.value
+            sonar_transducer_theta.value, sonar_transducer_alpha.value,
+            sonar_transducer_beta.value
         )
 
         self.swath_buffer = []      # Buffer that contains all unprocessed corrected swaths
@@ -140,9 +144,8 @@ class MapNode(Node):
             echo_map, prob_map, observed_swaths, range_map= generate_map(
                 n_rows, n_colums, self.sonar.n_bins,
                 self.map_resolution.value, map_origin_x, map_origin_y,
-                self.swath_buffer, self.sonar.range, 0.5*pi/180,
+                self.swath_buffer, self.sonar.range,
                 self.swath_ground_range_resolution.value,
-                0.2,0.0
             )
 
         print

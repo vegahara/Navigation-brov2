@@ -186,3 +186,8 @@ def quaternion_product(p, q):
 
     qproduct = qproduct/norm(qproduct)
     return qproduct
+
+class Timestep:
+    def __init__(self, pose, measurements) -> None:
+        self.pose = pose                    # Containing pose for the current timestep
+        self.measurements = measurements    # Containing all measurements for the current timestep

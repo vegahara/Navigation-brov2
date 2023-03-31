@@ -1,15 +1,17 @@
 import sys
 sys.path.append('utility_functions')
 sys.path.append('utility_classes')
-import utility_functions
+from utility_functions import Timestep
 from utility_classes import Swath, SideScanSonar, Landmark, Map
 
 from rclpy.node import Node
-from math import pi
+
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
+from scipy.spatial.transform import Rotation as R
 import copy
+import pickle
 
 from brov2_interfaces.msg import SwathProcessed, SwathArray
 
@@ -30,8 +32,9 @@ class LandmarkDetector(Node):
             parameters=[('processed_swath_topic', 'swath_processed'),
                         ('sonar_n_bins', 1000),
                         ('sonar_range', 30),
-                        ('sonar_transducer_theta', pi/4),
-                        ('sonar_transducer_alpha', pi/3),
+                        ('sonar_transducer_theta', (25*np.pi)/180),
+                        ('sonar_transducer_alpha', np.pi/3),
+                        ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
                         ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
@@ -47,6 +50,7 @@ class LandmarkDetector(Node):
         sonar_range,
         sonar_transducer_theta,
         sonar_transducer_alpha,
+        sonar_transducer_beta,
         self.swath_ground_range_resolution,
         self.swaths_per_map,
         self.map_resolution,
@@ -62,6 +66,7 @@ class LandmarkDetector(Node):
             'sonar_range',
             'sonar_transducer_theta',
             'sonar_transducer_alpha',
+            'sonar_transducer_beta',
             'swath_ground_range_resolution',
             'swaths_per_map',
             'map_resolution',
@@ -88,7 +93,8 @@ class LandmarkDetector(Node):
 
         self.sonar = SideScanSonar(
             sonar_n_bins.value, sonar_range.value, 
-            sonar_transducer_theta.value, sonar_transducer_alpha.value
+            sonar_transducer_theta.value, sonar_transducer_alpha.value,
+            sonar_transducer_beta.value
         )
 
         self.swath_buffer = []      # Buffer that contains all unprocessed corrected swaths
@@ -105,25 +111,26 @@ class LandmarkDetector(Node):
 
 
     def processed_swath_callback(self, msg):
-        pitch, yaw = utility_functions.pitch_yaw_from_quaternion(
-            msg.odom.pose.pose.orientation.w, 
-            msg.odom.pose.pose.orientation.x, 
-            msg.odom.pose.pose.orientation.y, 
-            msg.odom.pose.pose.orientation.z
-        )
+        r = R.from_quat([
+            msg.odom.pose.pose.orientation.x,
+            msg.odom.pose.pose.orientation.y,
+            msg.odom.pose.pose.orientation.z,
+            msg.odom.pose.pose.orientation.w
+        ])
+        [yaw, pitch, roll] = r.as_euler('ZYX')
 
         odom = [
             msg.odom.pose.pose.position.x,
             msg.odom.pose.pose.position.y,
-            0, # We dont use roll in map generation
+            roll,
             pitch,
             yaw
         ]
 
         swath = Swath(
             header=msg.header,
-            data_stb=msg.data_stb,
             data_port=msg.data_port,
+            data_stb=msg.data_stb,
             odom=odom,
             altitude=msg.altitude
         )
@@ -133,25 +140,26 @@ class LandmarkDetector(Node):
 
     def swath_array_callback(self, msg):
         for m in msg.swaths:
-            pitch, yaw = utility_functions.pitch_yaw_from_quaternion(
-            m.odom.pose.pose.orientation.w, 
-            m.odom.pose.pose.orientation.x, 
-            m.odom.pose.pose.orientation.y, 
-            m.odom.pose.pose.orientation.z
-            )
+            r = R.from_quat([
+                m.odom.pose.pose.orientation.x,
+                m.odom.pose.pose.orientation.y,
+                m.odom.pose.pose.orientation.z,
+                m.odom.pose.pose.orientation.w
+            ])
+            [yaw, pitch, roll] = r.as_euler('ZYX')
 
             odom = [
                 m.odom.pose.pose.position.x,
                 m.odom.pose.pose.position.y,
-                0, # We dont use roll in map generation
+                roll,
                 pitch,
                 yaw
             ]
 
             swath = Swath(
                 header=m.header,
-                data_stb=m.data_stb,
                 data_port=m.data_port,
+                data_stb=m.data_stb,
                 odom=odom,
                 altitude=m.altitude
             )
@@ -301,14 +309,12 @@ class LandmarkDetector(Node):
         
         map_origin_x, map_origin_y, n_rows, n_colums = \
             self.find_map_origin_and_size(swaths)
-        
-                    
+                      
         echo_map, prob_map, observed_swaths_map, range_map = generate_map(
             n_rows, n_colums, self.sonar.n_bins, 
             self.map_resolution.value, map_origin_x, map_origin_y, 
-            swaths, self.sonar.range, 0.5*pi/180, 
-            self.swath_ground_range_resolution.value,
-            0.2, 0.0
+            swaths, self.sonar.range,
+            self.swath_ground_range_resolution.value
         )
      
         echo_map = np.asarray(echo_map, dtype=np.float64)
@@ -442,15 +448,41 @@ class LandmarkDetector(Node):
                 global_landmark_pos[1] + v[1] * abs(actual_ground_range - min_ground_range)
             ]
 
+            landmark_pose_transformation = [
+                global_landmark_pos[0] - swaths[0].odom[0],
+                global_landmark_pos[1] - swaths[0].odom[1]
+            ]
+
+            landmark_range = np.sqrt(
+                landmark_pose_transformation[0] ** 2 + 
+                landmark_pose_transformation[1] ** 2
+            )
+
+            landmark_bearing = (np.arctan2(landmark_pose_transformation[1] , landmark_pose_transformation[0]) \
+                      - swaths[0].odom[4]) \
+                      % 2 * np.pi
+
             self.landmarks.append(Landmark(
                 global_landmark_pos[0],
                 global_landmark_pos[1],
+                landmark_range,
+                landmark_bearing,
                 landmark_height
             ))
 
             new_landmarks.append(self.landmarks[-1])
 
             cv.drawContours(mask, [cnt], 0, (255), -1)
+
+        # Save for offline SLAM
+
+        timestep = Timestep(swaths[0].odom, new_landmarks)
+
+        filename = '/home/repo/Navigation-brov2/images/pose_and_landmarks_training_data.pickle'
+
+        with open(filename, "ab") as f:
+            pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
+
 
         # Plotting
         landmark_candidates = cv.bitwise_and(
@@ -473,12 +505,6 @@ class LandmarkDetector(Node):
         self.ax2.imshow(echo_map, cmap='copper', vmin=0.6, vmax=1.4)
         self.ax2.imshow(landmark_candidates_all, cmap='summer')
         self.ax2.imshow(landmark_candidates, cmap='spring')
-
-        print(landmark_candidates.shape)
-        print(n_rows)
-        print(n_colums)
-        print(landmark_candidates[0][0])
-
 
         for landmark in self.landmarks:
             self.ax1.scatter(
@@ -535,8 +561,8 @@ class LandmarkDetector(Node):
         self.ax2.set_xticks(y_locations)
         self.ax2.set_xticklabels(y_labels)
 
-        # plt.draw()
-        # plt.pause(0.001)
-        plt.show()
-
-        input('Press any key to continue')
+        plt.draw()
+        plt.pause(0.005)
+        
+        # plt.show()
+        # input('Press any key to continue')

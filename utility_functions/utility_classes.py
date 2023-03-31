@@ -11,16 +11,17 @@ class Swath:
 
 
 class SideScanSonar:
-    def __init__(self, n_bins=1000, range=30, theta=np.pi/4, alpha=np.pi/3, x_offset=0.0, y_offset=0.0, z_offset=0.0):
-
+    def __init__(self, n_bins=1000, range=30, theta=np.pi/4, alpha=np.pi/3, 
+                 beta=(0.5*np.pi)/180, x_offset=0.0, y_offset=0.0, z_offset=0.0):
         self.n_bins = n_bins                    # Number of samples per active side and ping
-        self.range = range                      # Sonar range in meters
-        self.theta = theta                      # Angle from sonars y-axis to its acoustic axis 
-        self.alpha = alpha                      # Angle of the transducer opening
+        self.range = range                      # Sonar range [m]
+        self.theta = theta                      # Angle [rad] from sonars y-axis to its acoustic axis
+        self.alpha = alpha                      # Angle [rad] of the vertical transducer opening
+        self.beta = beta                        # Angle [rad] of the vertical transducer opening
         self.slant_resolution = range/n_bins    # Slant resolution [m] across track
-        self.x_offset = x_offset                # Offset from the body frame in x direction
-        self.y_offset = y_offset                # Offset from the body frame in y direction
-        self.z_offset = z_offset                # Offset from the body frame in z direction
+        self.x_offset = x_offset                # Offset [m] from the body frame in x direction
+        self.y_offset = y_offset                # Offset [m] from the body frame in y direction
+        self.z_offset = z_offset                # Offset [m] from the body frame in z direction
 
 
 class Map:
@@ -38,7 +39,14 @@ class Map:
             self.probability_map = np.full((n_rows, n_colums), np.nan, dtype=float)
 
 class Landmark:
-    def __init__(self, x, y, height) -> None:
+    def __init__(self, x, y, range, bearing, height) -> None:
         self.x = x              # Global x position of landmark
         self.y = y              # Global y position of landmark
+        self.range = range      # Range between current pose and landmark
+        self.bearing = bearing  # Bearing between current pose and landmark
         self.height = height    # Estimated height of landmark
+
+class Timestep:
+    def __init__(self, pose, measurements) -> None:
+        self.pose = pose                    # Containing pose for the current timestep
+        self.measurements = measurements    # Containing all measurements for the current timestep
