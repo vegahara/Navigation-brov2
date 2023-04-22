@@ -5,3 +5,7 @@ version = "0.1.0"
 
 [deps]
 Caesar = "62eebf14-49bc-5f46-9df9-f7b7ef379406"
+Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+RoMEPlotting = "238d586b-a4bf-555c-9891-eda6fc5e55a2"

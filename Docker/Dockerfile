@@ -36,6 +36,10 @@ RUN apt-get update && apt-get -y install python3-tk texlive dvipng \
 # Install tmux
 RUN apt-get update && apt-get -y install tmux
 
+# Instal packages for Caesar plotting
+RUN apt-get update && apt-get -y install hdf5-tools imagemagick \
+    graphviz xdot
+
 # Source ros
 RUN . /opt/ros/humble/setup.sh
 
