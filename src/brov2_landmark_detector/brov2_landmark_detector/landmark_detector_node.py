@@ -36,11 +36,11 @@ class LandmarkDetector(Node):
                         ('sonar_transducer_alpha', np.pi/3),
                         ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 100),
+                        ('swaths_per_map', 200),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001),
                         ('min_shadow_area', 0.1),
-                        ('max_shadow_area', 5.0),
+                        ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.3),
                         ('min_landmark_height', 0.1)]
         )
@@ -102,6 +102,7 @@ class LandmarkDetector(Node):
         self.processed_swaths = []
         self.map_full = None
         self.fig = None
+        self.n_timesteps = 0
 
         self.timer = self.create_timer(
             processing_period.value, self.landmark_detection
@@ -305,7 +306,8 @@ class LandmarkDetector(Node):
                 
         swaths = self.swath_buffer
         self.processed_swaths.extend(copy.deepcopy(swaths))
-        self.swath_buffer = []
+        
+        self.swath_buffer = self.swath_buffer[self.swaths_per_map.value//2:]
         
         map_origin_x, map_origin_y, n_rows, n_colums = \
             self.find_map_origin_and_size(swaths)
@@ -328,6 +330,32 @@ class LandmarkDetector(Node):
         new_landmarks = []
 
         threshold = 0.95
+
+        _retval, landmark_candidates_filter = \
+            cv.threshold(echo_map, threshold, 1.0, cv.THRESH_BINARY_INV)
+        landmark_candidates_filter = landmark_candidates_filter.astype(np.uint8)
+
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (3,3)) 
+        landmark_candidates_filter = cv.morphologyEx(landmark_candidates_filter, cv.MORPH_OPEN, str_el)
+        landmark_candidates_filter = cv.morphologyEx(landmark_candidates_filter, cv.MORPH_CLOSE, str_el)
+
+        contours, _ = cv.findContours(landmark_candidates_filter, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+        filter = np.zeros(landmark_candidates_filter.shape[:2], dtype=landmark_candidates_filter.dtype)
+
+        for cnt in contours:
+
+            area_shadow = cv.contourArea(cnt) * self.map_resolution.value**2
+            x,y,w,h = cv.boundingRect(cnt)
+            fill_rate = area_shadow / ((max(w,h)**2)*self.map_resolution.value**2)
+
+            if area_shadow < self.min_shadow_area.value or \
+               area_shadow > self.max_shadow_area.value or \
+               fill_rate < self.min_shadow_fill_rate.value:
+                continue
+
+            cv.drawContours(filter, [cnt], 0, (255), -1)
+
+        threshold = 0.98
         #threshold = self.get_otsu_threshold(echo_map, 4096)
         #print(threshold)
 
@@ -367,11 +395,16 @@ class LandmarkDetector(Node):
             )
             cv.drawContours(temp_im, [cnt], 0, (255), -1)
 
+            filter_out = True
+
             for col in range(x,x+w):
                 for row in range(y,y+h):
 
                     if not temp_im[row][col]:
                         continue
+
+                    if filter[row][col]:
+                        filter_out = False
 
                     observed_swaths.extend(observed_swaths_map[row][col])
 
@@ -383,6 +416,9 @@ class LandmarkDetector(Node):
                 
                     if cell_range > max_ground_range:
                         max_ground_range = cell_range
+
+            if filter_out:
+                continue
 
             # Remove all duplicates in observed_swaths
             observed_swaths = list(set(observed_swaths))
@@ -458,10 +494,11 @@ class LandmarkDetector(Node):
                 landmark_pose_transformation[1] ** 2
             )
 
-            landmark_bearing = (np.arctan2(landmark_pose_transformation[1] , landmark_pose_transformation[0]) \
-                      - swaths[0].odom[4]) \
-                      % 2 * np.pi
-
+            landmark_bearing = (np.pi / 2 \
+                              - np.arctan2(landmark_pose_transformation[0] , landmark_pose_transformation[1]) \
+                              - swaths[0].odom[4]) \
+                              % (2 * np.pi)
+            
             self.landmarks.append(Landmark(
                 global_landmark_pos[0],
                 global_landmark_pos[1],
@@ -478,7 +515,7 @@ class LandmarkDetector(Node):
 
         timestep = Timestep(swaths[0].odom, new_landmarks)
 
-        filename = '/home/repo/Navigation-brov2/images/pose_and_landmarks_training_data.pickle'
+        filename = '/home/repo/Navigation-brov2/images/full_training_200_swaths/pose_and_landmarks_training_data.pickle'
 
         with open(filename, "ab") as f:
             pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -561,8 +598,10 @@ class LandmarkDetector(Node):
         self.ax2.set_xticks(y_locations)
         self.ax2.set_xticklabels(y_labels)
 
-        plt.draw()
-        plt.pause(0.005)
+        # plt.draw()
+        # plt.pause(0.005)
+        self.n_timesteps += 1
+        plt.savefig('/home/repo/Navigation-brov2/images/full_training_200_swaths/plt_x' + str(self.n_timesteps))
         
         # plt.show()
         # input('Press any key to continue')
