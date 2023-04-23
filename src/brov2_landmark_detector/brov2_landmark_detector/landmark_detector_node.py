@@ -36,13 +36,13 @@ class LandmarkDetector(Node):
                         ('sonar_transducer_alpha', np.pi/3),
                         ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 200),
+                        ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001),
                         ('min_shadow_area', 0.1),
                         ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.3),
-                        ('min_landmark_height', 0.1)]
+                        ('min_landmark_height', 0.15)]
         )
                       
         (processed_swath_topic, 
@@ -101,7 +101,7 @@ class LandmarkDetector(Node):
         self.landmarks = []
         self.processed_swaths = []
         self.map_full = None
-        self.fig = None
+        self.fig = plt.figure(figsize=(12, 6))
         self.n_timesteps = 0
 
         self.timer = self.create_timer(
@@ -154,7 +154,8 @@ class LandmarkDetector(Node):
                 m.odom.pose.pose.position.y,
                 roll,
                 pitch,
-                yaw
+                yaw,
+                m.odom.pose.covariance
             ]
 
             swath = Swath(
@@ -513,13 +514,12 @@ class LandmarkDetector(Node):
 
         # Save for offline SLAM
 
-        timestep = Timestep(swaths[0].odom, new_landmarks)
+        # timestep = Timestep(swaths[0].odom, new_landmarks)
 
-        filename = '/home/repo/Navigation-brov2/images/full_training_200_swaths/pose_and_landmarks_training_data.pickle'
+        # filename = '/home/repo/Navigation-brov2/images/full_training_200_swaths/pose_and_landmarks_training_data.pickle'
 
-        with open(filename, "ab") as f:
-            pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
-
+        # with open(filename, "ab") as f:
+        #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # Plotting
         landmark_candidates = cv.bitwise_and(
@@ -554,6 +554,11 @@ class LandmarkDetector(Node):
                 (landmark.y - map_origin_y) / self.map_resolution.value,
                 -(landmark.x - map_origin_x) / self.map_resolution.value,
                 marker='x', c='k'
+            )
+            self.ax2.annotate(
+                str(landmark.height),
+                ((landmark.y - map_origin_y) / self.map_resolution.value,
+                -(landmark.x - map_origin_x) / self.map_resolution.value)
             )
 
         for swath in self.processed_swaths:
@@ -598,10 +603,10 @@ class LandmarkDetector(Node):
         self.ax2.set_xticks(y_locations)
         self.ax2.set_xticklabels(y_labels)
 
-        # plt.draw()
-        # plt.pause(0.005)
-        self.n_timesteps += 1
-        plt.savefig('/home/repo/Navigation-brov2/images/full_training_200_swaths/plt_x' + str(self.n_timesteps))
+        plt.draw()
+        plt.pause(0.005)
+        # self.n_timesteps += 1
+        # plt.savefig('/home/repo/Navigation-brov2/images/full_training_200_swaths/plt_x' + str(self.n_timesteps))
         
         # plt.show()
         # input('Press any key to continue')

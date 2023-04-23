@@ -352,6 +352,8 @@ class SwathProcessingNode(Node):
         swath.odom.pose.pose.position.y = position_old.y + t_odom * (position_new.y - position_old.y)
         swath.odom.pose.pose.position.z = position_old.z + t_odom * (position_new.z - position_old.z)
 
+        swath.odom.pose.covariance = self.unprocessed_odoms[odom_new_index-1].pose.covariance
+
         # Remove old msgs
         self.unprocessed_odoms = self.unprocessed_odoms[odom_new_index-1:]
         self.unprocessed_altitudes = self.unprocessed_altitudes[altitude_new_index-1:]
@@ -527,7 +529,7 @@ class SwathProcessingNode(Node):
 
         self.swath_array.swaths.append(msg)
 
-        if len(self.swath_array.swaths) >= 100:
+        if len(self.swath_array.swaths) >= 50:
             self.swath_array_pub(self.swath_array)
             self.swath_array = SwathArray()
 
