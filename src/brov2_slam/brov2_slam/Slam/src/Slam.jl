@@ -56,7 +56,7 @@ for (timestep, data) in enumerate(timesteps)
 
     if timestep == 1
         pp2 = PriorPose2(MvNormal(
-            [data.pose[2]; data.pose[1]; rem2pi(-data.pose[5] - pi/2, RoundNearest)], 
+            [data.pose[2]; data.pose[1]; rem2pi(-data.pose[5] + pi/2, RoundNearest)], 
             Matrix(Diagonal(
                 [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]].^2
             ))
@@ -64,21 +64,101 @@ for (timestep, data) in enumerate(timesteps)
 
         addFactor!(fg, [new_pose], pp2)
     else
-        x_diff_w = data.pose[1] - last_data.pose[1]
-        y_diff_w = data.pose[2] - last_data.pose[2]
+        # # Transform from NED to SE2
+        # x_current = [
+        #     data.pose[2]
+        #     data.pose[1]
+        #     -data.pose[5] + pi/2
+        # ]
+        # x_last = [
+        #     last_data.pose[2]
+        #     last_data.pose[1]
+        #     -last_data.pose[5] + pi/2
+        # ]
 
-        p2 = Pose2Pose2(MvNormal(
-            [
-                x_diff_w * cos(data.pose[5]) + y_diff_w * sin(data.pose[5]), # Transform from world NED to body SE2
-                x_diff_w * sin(data.pose[5]) - y_diff_w * cos(data.pose[5]), # Transform from world NED to body SE2
-                rem2pi((data.pose[5] - last_data.pose[5]), RoundNearest)
-            ],
-            Matrix(Diagonal([
-                data.pose[6][1]^2 - last_data.pose[6][1]^2,
-                data.pose[6][8]^2 - last_data.pose[6][8]^2,
-                data.pose[6][36]^2
-            ]))
-        ))
+        # # Find transformation BACKWARDS, from current pose to last pose
+        # Δx_w = x_last - x_current
+
+        # # Transform Δx from world to body 
+        # T_w_b = [
+        #     cos(data.pose[5]) -sin(data.pose[5]) 0.0;
+        #     sin(data.pose[5]) cos(data.pose[5]) 0.0;
+        #     0.0 0.0 1.0
+        # ]
+
+
+
+        # Transform from world to body NED (2D)
+        T_w_b = [
+            cos(data.pose[5])  sin(data.pose[5]) 0.0;
+            -sin(data.pose[5]) cos(data.pose[5]) 0.0;
+            0.0 0.0 1.0
+        ]
+
+        # Transform from body NED (2D) to body SE2
+        # Since we here are only working with relative yaw angles, only the sign has to be flipped
+        T_b_b = [
+            1.0 0.0  0.0;
+            0.0 -1.0  0.0;
+            0.0 0.0  -1.0
+        ]
+
+        T = T_b_b * T_w_b
+
+        Δx_w = -[
+            data.pose[1] - last_data.pose[1],
+            data.pose[2] - last_data.pose[2],
+            data.pose[5] - last_data.pose[5],
+        ]
+
+        Σ_w = Matrix(Diagonal([
+            data.pose[6][1]^2 - last_data.pose[6][1]^2,
+            data.pose[6][8]^2 - last_data.pose[6][8]^2,
+            data.pose[6][36]^2
+        ]))
+
+        Δx_b = T * Δx_w
+
+        println(Δx_w)
+        println(Δx_b)
+
+        Δx_b = Δx_b
+
+        Δx_b[3] = rem2pi(Δx_b[3], RoundNearest)
+
+        println(Δx_b)
+
+        Σ_b = T * Σ_w * T'
+        
+        # Handels numerical errors in calculation of Σ_b
+        sΣ_b = Symmetric(Σ_b)
+
+        if count(>(1e-14),abs.(Σ_b - sΣ_b)) > 0
+            println(Σ_b)
+            println(sΣ_b)
+            println(Σ_b - sΣ_b)
+            throw(ErrorException("Transformed covariance matrix is not positive definite"))
+        end
+
+        # x_diff_w = data.pose[1] - last_data.pose[1]
+        # y_diff_w = data.pose[2] - last_data.pose[2]
+
+        # p2 = Pose2Pose2(MvNormal(
+        #     [
+        #         x_diff_w * cos(data.pose[5]) + y_diff_w * sin(data.pose[5]), # Transform from world NED to body SE2
+        #         x_diff_w * sin(data.pose[5]) - y_diff_w * cos(data.pose[5]), # Transform from world NED to body SE2
+        #         rem2pi((data.pose[5] - last_data.pose[5]), RoundNearest)
+        #     ],
+        #     Matrix(Diagonal([
+        #         data.pose[6][1]^2 - last_data.pose[6][1]^2,
+        #         data.pose[6][8]^2 - last_data.pose[6][8]^2,
+        #         data.pose[6][36]^2
+        #     ]))
+        # ))
+
+        p2 = Pose2Pose2(MvNormal(Δx_b, sΣ_b))
+
+        println(p2)
 
         addFactor!(fg, [new_pose, Symbol("x$(timestep-1)")], p2)
     end
@@ -108,14 +188,14 @@ for (timestep, data) in enumerate(timesteps)
             if isempty(pose_evaluation_poses)
                 pose_evaluation_poses = hcat([sample_point[1], sample_point[2], yaw])
                 landmark_evaluation_points = hcat([
-                    sample_point[1] + data.measurements[meas_idx].range * cos(yaw + pi - data.measurements[meas_idx].bearing), 
-                    sample_point[2] + data.measurements[meas_idx].range * sin(yaw + pi - data.measurements[meas_idx].bearing)
+                    sample_point[1] + data.measurements[meas_idx].range * cos(yaw - data.measurements[meas_idx].bearing), 
+                    sample_point[2] + data.measurements[meas_idx].range * sin(yaw - data.measurements[meas_idx].bearing)
                 ])
             else
                 pose_evaluation_poses = hcat(pose_evaluation_poses, [sample_point[1], sample_point[2], yaw])
                 landmark_evaluation_points = hcat(landmark_evaluation_points, [
-                    sample_point[1] + data.measurements[meas_idx].range * cos(yaw + pi - data.measurements[meas_idx].bearing), 
-                    sample_point[2] + data.measurements[meas_idx].range * sin(yaw + pi - data.measurements[meas_idx].bearing)
+                    sample_point[1] + data.measurements[meas_idx].range * cos(yaw - data.measurements[meas_idx].bearing), 
+                    sample_point[2] + data.measurements[meas_idx].range * sin(yaw - data.measurements[meas_idx].bearing)
                 ])
             end
         end
@@ -149,7 +229,7 @@ for (timestep, data) in enumerate(timesteps)
             landmark_range = data.measurements[meas_idx].range
                 
             p2br = Pose2Point2BearingRange(
-                Normal(rem2pi(pi - landmark_bearing, RoundNearest), sigma_b),
+                Normal(rem2pi(-landmark_bearing, RoundNearest), sigma_b),
                 Normal(landmark_range, sigma_r)
             )
 
@@ -178,7 +258,7 @@ for (timestep, data) in enumerate(timesteps)
             landmark_range = data.measurements[meas_idx].range
                 
             p2br = Pose2Point2BearingRange(
-                Normal(rem2pi(pi - landmark_bearing, RoundNearest), sigma_b),
+                Normal(rem2pi(-landmark_bearing, RoundNearest), sigma_b),
                 Normal(landmark_range, sigma_r)
             )
             
@@ -220,14 +300,14 @@ for (timestep, data) in enumerate(timesteps)
 
         end
 
-        println(probabilities)
+        # println(probabilities)
 
         # Normalizing and inserting probability for new pose
         probabilities = probabilities ./ sum(probabilities)
         insert!(probabilities, 1, 1)
 
-        println(probabilities)
-        println(variables)
+        # println(probabilities)
+        # println(variables)
 
         if any(isnan, probabilities)
             @warn "Not able to assosiate measurement"
@@ -238,7 +318,7 @@ for (timestep, data) in enumerate(timesteps)
         landmark_range = data.measurements[meas_idx].range
             
         p2br = Pose2Point2BearingRange(
-            Normal(rem2pi(pi - landmark_bearing, RoundNearest), sigma_b),
+            Normal(rem2pi(-landmark_bearing, RoundNearest), sigma_b),
             Normal(landmark_range, sigma_r)
         )
 
@@ -249,7 +329,7 @@ for (timestep, data) in enumerate(timesteps)
 
     solveTree!(fg)
 
-    p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=false, drawEllipse=false, levels=3)
+    p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
 
     p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/full_training_200_swaths/2D_plot.pdf")
 
