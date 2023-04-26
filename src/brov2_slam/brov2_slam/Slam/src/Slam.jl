@@ -64,30 +64,6 @@ for (timestep, data) in enumerate(timesteps)
 
         addFactor!(fg, [new_pose], pp2)
     else
-        # # Transform from NED to SE2
-        # x_current = [
-        #     data.pose[2]
-        #     data.pose[1]
-        #     -data.pose[5] + pi/2
-        # ]
-        # x_last = [
-        #     last_data.pose[2]
-        #     last_data.pose[1]
-        #     -last_data.pose[5] + pi/2
-        # ]
-
-        # # Find transformation BACKWARDS, from current pose to last pose
-        # Δx_w = x_last - x_current
-
-        # # Transform Δx from world to body 
-        # T_w_b = [
-        #     cos(data.pose[5]) -sin(data.pose[5]) 0.0;
-        #     sin(data.pose[5]) cos(data.pose[5]) 0.0;
-        #     0.0 0.0 1.0
-        # ]
-
-
-
         # Transform from world to body NED (2D)
         T_w_b = [
             cos(data.pose[5])  sin(data.pose[5]) 0.0;
@@ -96,7 +72,8 @@ for (timestep, data) in enumerate(timesteps)
         ]
 
         # Transform from body NED (2D) to body SE2
-        # Since we here are only working with relative yaw angles, only the sign has to be flipped
+        # We flip the y coordinate and since we here are using relative 
+        # yaw angles, only the sign has to be flipped for yaw
         T_b_b = [
             1.0 0.0  0.0;
             0.0 -1.0  0.0;
@@ -105,11 +82,17 @@ for (timestep, data) in enumerate(timesteps)
 
         T = T_b_b * T_w_b
 
+        # For some odd reason we need to calculate the transform 
+        # from the new pose and BACKWARDS to the old pose. 
         Δx_w = -[
             data.pose[1] - last_data.pose[1],
             data.pose[2] - last_data.pose[2],
             data.pose[5] - last_data.pose[5],
         ]
+
+        Δx_b = T * Δx_w
+
+        Δx_b[3] = rem2pi(Δx_b[3], RoundNearest)
 
         Σ_w = Matrix(Diagonal([
             data.pose[6][1]^2 - last_data.pose[6][1]^2,
@@ -117,48 +100,16 @@ for (timestep, data) in enumerate(timesteps)
             data.pose[6][36]^2
         ]))
 
-        Δx_b = T * Δx_w
-
-        println(Δx_w)
-        println(Δx_b)
-
-        Δx_b = Δx_b
-
-        Δx_b[3] = rem2pi(Δx_b[3], RoundNearest)
-
-        println(Δx_b)
-
         Σ_b = T * Σ_w * T'
         
         # Handels numerical errors in calculation of Σ_b
         sΣ_b = Symmetric(Σ_b)
 
         if count(>(1e-14),abs.(Σ_b - sΣ_b)) > 0
-            println(Σ_b)
-            println(sΣ_b)
-            println(Σ_b - sΣ_b)
             throw(ErrorException("Transformed covariance matrix is not positive definite"))
         end
 
-        # x_diff_w = data.pose[1] - last_data.pose[1]
-        # y_diff_w = data.pose[2] - last_data.pose[2]
-
-        # p2 = Pose2Pose2(MvNormal(
-        #     [
-        #         x_diff_w * cos(data.pose[5]) + y_diff_w * sin(data.pose[5]), # Transform from world NED to body SE2
-        #         x_diff_w * sin(data.pose[5]) - y_diff_w * cos(data.pose[5]), # Transform from world NED to body SE2
-        #         rem2pi((data.pose[5] - last_data.pose[5]), RoundNearest)
-        #     ],
-        #     Matrix(Diagonal([
-        #         data.pose[6][1]^2 - last_data.pose[6][1]^2,
-        #         data.pose[6][8]^2 - last_data.pose[6][8]^2,
-        #         data.pose[6][36]^2
-        #     ]))
-        # ))
-
         p2 = Pose2Pose2(MvNormal(Δx_b, sΣ_b))
-
-        println(p2)
 
         addFactor!(fg, [new_pose, Symbol("x$(timestep-1)")], p2)
     end
@@ -208,8 +159,6 @@ for (timestep, data) in enumerate(timesteps)
                 .* landmark_mdf(landmark_evaluation_points)) 
                 / n_sample_points
             )
-
-            println(likelihood)
 
             if likelihood >= landmark_likelihood_treshold
                 landmarks_to_assosiate[meas_idx][landmark] = likelihood 
@@ -300,14 +249,9 @@ for (timestep, data) in enumerate(timesteps)
 
         end
 
-        # println(probabilities)
-
         # Normalizing and inserting probability for new pose
         probabilities = probabilities ./ sum(probabilities)
         insert!(probabilities, 1, 1)
-
-        # println(probabilities)
-        # println(variables)
 
         if any(isnan, probabilities)
             @warn "Not able to assosiate measurement"
