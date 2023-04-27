@@ -31,7 +31,7 @@ class SwathProcessingNode(Node):
             ('sonar_transducer_theta', (25 * np.pi) / 180),
             ('sonar_transducer_alpha', np.pi/3),
             ('sonar_x_offset', -0.2532),
-            ('sonar_y_offset', 0.82),
+            ('sonar_y_offset', 0.082),
             ('sonar_z_offset', 0.033)
         ])
             
@@ -352,7 +352,7 @@ class SwathProcessingNode(Node):
         swath.odom.pose.pose.position.y = position_old.y + t_odom * (position_new.y - position_old.y)
         swath.odom.pose.pose.position.z = position_old.z + t_odom * (position_new.z - position_old.z)
 
-        swath.odom.pose.covariance = self.unprocessed_odoms[odom_new_index-1].pose.covariance
+        swath.odom.pose.covariance = self.unprocessed_odoms[odom_new_index].pose.covariance
 
         # Remove old msgs
         self.unprocessed_odoms = self.unprocessed_odoms[odom_new_index-1:]
