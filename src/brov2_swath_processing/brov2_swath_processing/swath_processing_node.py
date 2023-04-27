@@ -8,6 +8,8 @@ from csaps import csaps
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
+from copy import deepcopy
+
 from rclpy.node import Node
 from rclpy.time import Time, Duration
 from nav_msgs.msg import Odometry
@@ -31,7 +33,7 @@ class SwathProcessingNode(Node):
             ('sonar_transducer_theta', (25 * np.pi) / 180),
             ('sonar_transducer_alpha', np.pi/3),
             ('sonar_x_offset', -0.2532),
-            ('sonar_y_offset', 0.82),
+            ('sonar_y_offset', 0.082),
             ('sonar_z_offset', 0.033)
         ])
             
@@ -90,6 +92,14 @@ class SwathProcessingNode(Node):
             sonar_x_offset.value, sonar_y_offset.value, sonar_z_offset.value
         )
 
+        self.swaths_raw = []
+        self.swaths_blind_zone = []
+        self.swaths_blind_zone_no_corr = []
+        self.swaths_intensity = []
+        self.swaths_intensity_no_corr = []
+        self.swaths_slant_range = []
+        self.swaths_slant_range_no_corr = []
+
         # Number of times we try to interpolate the pose for the newest swath before it gets discarded
         self.n_tries_interpolating_swath_limit = 10
         self.n_tries_interpolating_swath = 0 
@@ -111,9 +121,6 @@ class SwathProcessingNode(Node):
             odom=Odometry(),
             altitude=None
         )
-
-        # data_stb=np.flip(np.array([int.from_bytes(b, "big") for b in msg.data_zero],dtype=float)),
-        # data_port=np.flip(np.array([int.from_bytes(b, "big") for b in msg.data_one],dtype=float)),
 
         self.unprocessed_swaths.append(swath)
 
@@ -137,6 +144,7 @@ class SwathProcessingNode(Node):
         msg.data_stb = swath.data_stb
 
         self.swath_processed_puplisher.publish(msg)
+
 
     def swath_array_pub(self, msg):
 
@@ -217,11 +225,6 @@ class SwathProcessingNode(Node):
             normalization_factor = np.sum(spatial_support[j] * range_support)
             filtered_data[i] = filtered_data_point / normalization_factor
 
-        # plt.plot(data)
-        # plt.plot(filtered_data)
-        # plt.show()
-        # input('Press any key to continue')
-
         return filtered_data
 
 
@@ -245,11 +248,6 @@ class SwathProcessingNode(Node):
             filtered_data_point = np.sum(data[i+j] * spatial_support * range_support)
             normalization_factor = np.sum(spatial_support * range_support)
             filtered_data[i] = filtered_data_point / normalization_factor
-
-        # plt.plot(data)
-        # plt.plot(filtered_data)
-        # plt.show()
-        # input('Press any key to continue')
 
         return filtered_data
 
@@ -373,10 +371,6 @@ class SwathProcessingNode(Node):
             smooth=self.swath_normalizaton_smoothing_param
         ))
 
-        # plt.plot(swath.data_stb)
-        # plt.plot(spl_stb)
-        # plt.show()
-        # input('Press any key to continue')
         swath.data_stb[bin_fbr_stb:] = np.divide(swath.data_stb[bin_fbr_stb:], spl_stb)
 
         x = np.linspace(0., self.sonar.n_bins-bin_fbr_port, self.sonar.n_bins-bin_fbr_port)
@@ -386,16 +380,9 @@ class SwathProcessingNode(Node):
             x, 
             smooth=self.swath_normalizaton_smoothing_param
         )
-        # plt.plot(swath.data_port)
-        # plt.plot(spl_port)
-        # plt.show()
-        # input('Press any key to continue')
         
         swath.data_port[:-bin_fbr_port] = np.divide(swath.data_port[:-bin_fbr_port], spl_port)
 
-        # plt.plot(swath.data_port)
-        # plt.show()
-        # input('Press any key to continue')
         return swath
 
 
@@ -505,79 +492,197 @@ class SwathProcessingNode(Node):
         range_fbr_port, range_fbr_stb = self.get_range_first_bottom_return(swath, roll, pitch)
         if  range_fbr_port > self.sonar.range or range_fbr_stb > self.sonar.range:
             return
-
-        # swath = self.intensity_correction_srbf(swath, 5.0)
-
-        # swath = self.swath_filtering(swath, 1.0)
-
+        
+        self.swaths_raw.append(deepcopy(swath))
+              
+        swath_uncorrected = self.blind_zone_removal(deepcopy(swath), 0.0, 0.0)
         swath = self.blind_zone_removal(swath, roll, pitch)
-
-        # swath_bf = self.intensity_correction_bf(swath, roll, pitch, 20.0, 100.0)
+        
+        self.swaths_blind_zone.append(deepcopy(swath))
+        self.swaths_blind_zone_no_corr.append(deepcopy(swath_uncorrected))
 
         swath = self.intensity_correction(swath, roll, pitch)
+        swath_uncorrected = self.intensity_correction(swath_uncorrected, 0.0, 0.0)
 
-        # swath = self.slant_range_correction(swath, roll, pitch)
-
-        self.sonar_pub(swath)
-
-        msg = SwathProcessed()
-        msg.header = swath.header
-        msg.odom = swath.odom
-        msg.altitude = swath.altitude
-        msg.data_port = swath.data_port
-        msg.data_stb = swath.data_stb
-
-        self.swath_array.swaths.append(msg)
-
-        if len(self.swath_array.swaths) >= 50:
-            self.swath_array_pub(self.swath_array)
-            self.swath_array = SwathArray()
-
+        self.swaths_intensity.append(deepcopy(swath))
+        self.swaths_intensity_no_corr.append(deepcopy(swath_uncorrected))
         
+        swath = self.slant_range_correction(swath, roll, pitch)
+        swath_uncorrected = self.slant_range_correction(swath_uncorrected, 0.0, 0.0)
 
-        # self.processed_swaths.append(np.append(swath.data_port, swath.data_stb))
-        # self.processed_swaths_bf.append(np.append(swath_bf.data_port, swath_bf.data_stb))
+        self.swaths_slant_range.append(deepcopy(swath))
+        self.swaths_slant_range_no_corr.append(deepcopy(swath_uncorrected))
 
-        # if len(self.processed_swaths) > 800: 
-        #     sonar_im = np.asarray(self.processed_swaths, dtype=np.float64)
-            #sonar_im_bf = np.asarray(self.processed_swaths_bf, dtype=np.float64)
+        start_index = 0
+        end_index = 1500
+        save_folder = '/home/repo/Navigation-brov2/images/swath_processing/'
+        plt.rcParams['font.family'] = 'Bitstream Vera Sans'
+        plt.rcParams['font.size'] = 12
 
-            # filename = '/home/repo/Navigation-brov2/images/map_waterfall_only_int_corr.csv'
-            # np.savetxt(filename, sonar_im, delimiter=',')
 
-            # input('Press any key to continue')
+        if len(self.swaths_raw) >= end_index:
+            self.swaths_raw = self.swaths_raw[start_index:]
+            self.swaths_blind_zone = self.swaths_blind_zone[start_index:]
+            self.swaths_blind_zone_no_corr = self.swaths_blind_zone_no_corr[start_index:]
+            self.swaths_intensity = self.swaths_intensity[start_index:]
+            self.swaths_intensity_no_corr = self.swaths_intensity_no_corr[start_index:]
+            self.swaths_slant_range = self.swaths_slant_range[start_index:]
+            self.swaths_slant_range_no_corr = self.swaths_slant_range_no_corr[start_index:]
 
-            # hist, _bin_edges = np.histogram(sonar_im[~np.isnan(sonar_im)], bins=200, range=(0.5,1.5))
+            self.plot_swath_arrays(save_folder)
 
-            # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10,5))
+        # self.sonar_pub(swath)
 
-            # ax1.imshow(sonar_im, cmap='copper', vmin=0.6 , vmax=1.4)
-            #ax2.imshow(sonar_im_bf, cmap='copper', vmin=0.6 , vmax=1.4)
-            # ax2.plot(hist / len(sonar_im[~np.isnan(sonar_im)]))
-            # ax2.set_xlim([-1, 201])
-            # ax2.set_xticks(np.arange(0, 201, 20))
-            # ax2.set_xticklabels([f'{x:.1f}' for x in np.arange(0.5, 1.5001, 0.1)])
-            
+        # msg = SwathProcessed()
+        # msg.header = swath.header
+        # msg.odom = swath.odom
+        # msg.altitude = swath.altitude
+        # msg.data_port = swath.data_port
+        # msg.data_stb = swath.data_stb
 
-            #plt.imshow(sonar_im, cmap='copper')
-            # plt.show()
+        # self.swath_array.swaths.append(msg)
 
-            # input('Press any key to continue')
+        # if len(self.swath_array.swaths) >= 50:
+        #     self.swath_array_pub(self.swath_array)
+        #     self.swath_array = SwathArray()
 
-        # self.processed_swaths.append(swath)
 
-        # if len(self.processed_swaths) > 20:
+    def plot_swath_arrays(self, save_folder=None):
 
-        #     x_coordinates = []
-        #     y_coordinates = []
+        vmin_raw = 25
+        vmax_raw = 150
 
-        #     for swath in self.processed_swaths:
-        #         x_coordinates.append(swath.odom.pose.pose.position.x)
-        #         y_coordinates.append(swath.odom.pose.pose.position.y)
+        self.plot_swaths(
+            self.swaths_raw,
+            'Raw swaths',
+            save_folder,
+            vmin=vmin_raw, vmax=vmax_raw
+        )
 
-        #     plt.scatter(x_coordinates,y_coordinates, 
-        #         c='grey', edgecolor='none'
-        #     )
-        #     plt.show()
+        self.plot_blind_zone_removal(
+            self.swaths_raw,
+            'Raw swaths - blind zone removal marked',
+            save_folder,
+            vmin=vmin_raw, vmax=vmax_raw
+        )
 
-        #     input('Press any key to continue')
+        self.plot_swaths(
+            self.swaths_blind_zone,
+            'Blind zone corrected',
+            save_folder,
+            vmin=vmin_raw, vmax=vmax_raw
+        )
+
+        self.plot_swaths(
+            self.swaths_blind_zone_no_corr,
+            'Blind zone corrected - no pitch roll correction',
+            save_folder,
+            vmin=vmin_raw, vmax=vmax_raw
+        )
+
+        self.plot_swaths(
+            self.swaths_intensity,
+            'Intensity corrected',
+            save_folder
+        )
+
+        self.plot_swaths(
+            self.swaths_intensity_no_corr,
+            'Intensity corrected - no pitch roll correction',
+            save_folder
+        )
+
+        labels = ['-30.0 m', '-15.0 m', '0.0 m', '15.0 m', '30.0 m']
+
+        self.plot_swaths(
+            self.swaths_slant_range,
+            'Slant range corrected',
+            save_folder,
+            labels=labels
+        )
+
+        self.plot_swaths(
+            self.swaths_slant_range_no_corr,
+            'Slant range corrected - no pitch roll correction',
+            save_folder,
+            labels=labels
+        )
+
+        plt.show()
+
+
+    def plot_swaths(self, swaths, title:str, save_folder=None, vmin=0.6, vmax=1.4, labels=None):
+
+        im = np.empty((len(swaths), self.sonar.n_bins * 2))
+
+        for i, swath in enumerate(swaths):
+            im[i][:] = np.concatenate((swath.data_port, swath.data_stb))
+
+        fig = plt.figure(title)
+
+        plt.imshow(im, cmap='copper', vmin=vmin , vmax=vmax)
+        plt.xlabel('Across track')
+        plt.ylabel('Along track')
+
+        if labels == None:
+            labels = ['-1000', '-500', '0', '500', '1000']
+
+        ticks = [0.0, 500.0, 1000.0, 1500.0, 1999.0]
+        plt.xticks(ticks, labels)
+
+        if save_folder != None:
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+
+        return fig
+
+
+    def plot_blind_zone_removal(self, swaths, title:str, save_folder=None, vmin=0.6, vmax=1.4, labels=None, width=6):
+
+        im_blind_zone = np.empty((len(swaths), self.sonar.n_bins * 2))
+        im_blind_zone[:] = np.nan 
+        im_blind_zone_no_corr = np.empty((len(swaths), self.sonar.n_bins * 2))
+        im_blind_zone_no_corr[:] = np.nan
+
+        blind_zone_border_port = np.empty(len(swaths), dtype=int)
+        blind_zone_border_stb = np.empty(len(swaths), dtype=int)
+        blind_zone_border_no_corr_port = np.empty(len(swaths), dtype=int)
+        blind_zone_border_no_corr_stb = np.empty(len(swaths), dtype=int)
+        no_echo_port = np.empty(len(swaths), dtype=int)
+        no_echo_stb = np.empty(len(swaths), dtype=int)
+
+        for i, swath in enumerate(swaths):
+            roll, pitch, _yaw = self.get_roll_pitch_yaw(swath)
+
+            bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, roll, pitch)
+            blind_zone_border_port[i] = self.sonar.n_bins - bin_fbr_port - 1
+            blind_zone_border_stb[i] = self.sonar.n_bins + bin_fbr_stb
+
+            bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, 0.0, 0.0)
+            blind_zone_border_no_corr_port[i] = self.sonar.n_bins - bin_fbr_port - 1
+            blind_zone_border_no_corr_stb[i] = self.sonar.n_bins + bin_fbr_stb
+
+            corr_alt_port, corr_alt_stb = self.get_corrected_sonar_altitude(swath, roll, pitch)
+            no_echo_port[i] = self.sonar.n_bins - int(corr_alt_port / self.sonar.slant_resolution) - 1
+            no_echo_stb[i] = self.sonar.n_bins + int(corr_alt_stb / self.sonar.slant_resolution)
+
+        self.plot_swaths(
+            self.swaths_raw,
+            title,
+            save_folder=None,
+            vmin=vmin, vmax=vmax,
+            labels=labels
+        )
+
+        y = range(0,len(swaths))
+
+        plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone')
+        plt.plot(blind_zone_border_stb, y, c='g', linewidth=2)
+        plt.plot(blind_zone_border_no_corr_port, y, c='r', linewidth=2, label='Blind zone - no correction')
+        plt.plot(blind_zone_border_no_corr_stb, y, c='r', linewidth=2)
+        plt.plot(no_echo_port, y, c='c', linewidth=2, label='First possible echo return')
+        plt.plot(no_echo_stb, y, c='c', linewidth=2)
+
+        plt.legend()
+
+        if save_folder != None:
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
