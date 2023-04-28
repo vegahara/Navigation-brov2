@@ -141,14 +141,13 @@ class MapNode(Node):
         print("Generating map")
 
         for i in range(1):
-            echo_map, prob_map, observed_swaths, range_map= generate_map(
+            echo_map = generate_map(
                 n_rows, n_colums, self.sonar.n_bins,
                 self.map_resolution.value, map_origin_x, map_origin_y,
                 self.swath_buffer, self.sonar.range,
                 self.swath_ground_range_resolution.value,
+                0.1
             )
-
-        print
 
         # filename = '/home/repo/Navigation-brov2/images/map_400_swaths_5_cm_res_new_method.csv'
         # np.savetxt(filename, echo_map, delimiter=',')
