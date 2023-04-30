@@ -3,6 +3,7 @@ sys.path.append('utility_functions')
 from utility_classes import Swath, SideScanSonar
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from csaps import csaps
 from scipy.spatial.transform import Rotation as R
@@ -516,7 +517,8 @@ class SwathProcessingNode(Node):
         start_index = 0
         end_index = 1500
         save_folder = '/home/repo/Navigation-brov2/images/swath_processing/'
-        plt.rcParams['font.family'] = 'Bitstream Vera Sans'
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = 'Bitstream Vera Sans'
         plt.rcParams['font.size'] = 12
 
 
@@ -620,7 +622,10 @@ class SwathProcessingNode(Node):
 
         fig = plt.figure(title)
 
-        plt.imshow(im, cmap='copper', vmin=vmin , vmax=vmax)
+        cmap_copper = matplotlib.cm.copper
+        cmap_copper.set_bad('w', 1.)
+
+        plt.imshow(im, cmap=cmap_copper, vmin=vmin , vmax=vmax)
         plt.xlabel('Across track')
         plt.ylabel('Along track')
 
