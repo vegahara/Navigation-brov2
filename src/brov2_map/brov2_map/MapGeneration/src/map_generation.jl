@@ -59,6 +59,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         for swath in swaths
     ]
 
+    intensity_map = fill(NaN, (n_rows, n_colums))
+
     for _ in 1:3
 
         # Optimized method
@@ -89,7 +91,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         cells_to_filter = fill(false, (n_rows, n_colums))
         cells_to_visit = CircularDeque{SVector{2,Int}}(Int((20*2*sonar_range)/map_resolution))
 
-        intensity_map = @timeit to "map_generation_opt" generate_map_optimized!(
+        @timeit to "map_generation_opt" generate_map_optimized!(
             n_rows, n_colums, n_bins, map_resolution, 
             map_origin, swath_locals, sonar_range, probability_threshold,
             sonar_beta, swath_slant_resolution,
@@ -115,7 +117,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
         cell_local = Array{SVector{2,Float64}}(undef, 2, 2)
 
-        intensity_map = @timeit to "map_generation_org" generate_map_original!(
+        @timeit to "map_generation_org" generate_map_original!(
             n_rows, n_colums, n_bins, map_resolution, 
             map_origin, swath_locals, sonar_range, probability_threshold,
             sonar_beta, swath_ground_resolution,
@@ -135,7 +137,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
         intensity_values = zeros(2 * n_bins * length(swath_locals))
 
-        intensity_map = @timeit to "map_generation_knn" generate_map_knn!(
+        @timeit to "map_generation_knn" generate_map_knn!(
             n_rows, n_colums, n_bins, map_resolution, 
             map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
             swath_locals, intensity_map, bin_coordinates, intensity_values)
@@ -151,8 +153,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.1, 0.5)
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
-
-    intensity_map = fill(NaN, (n_rows, n_colums))
 
     return intensity_map
 end
@@ -312,8 +312,6 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
         n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
         intensity_map, cell_coordinates, intensity_values, cells_to_filter
     )
-            
-    return intensity_map
 end
 
 
@@ -489,8 +487,6 @@ function generate_map_original!(
             n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
             intensity_map, cell_coordinates, intensity_values, cells_to_filter
         )
-    
-    return intensity_map
 end
 
 
@@ -640,8 +636,6 @@ function generate_map_knn!(
             end
         end
     end
-    
-    return intensity_map
 end
 
 function knn_filtering!(n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
