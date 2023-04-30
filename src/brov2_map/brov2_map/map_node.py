@@ -6,11 +6,14 @@ from utility_classes import Swath, SideScanSonar
 
 import numpy as np
 from math import pi
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tick
+from copy import deepcopy
 from scipy.spatial.transform import Rotation as R
 
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 
 from brov2_interfaces.msg import SwathProcessed
 
@@ -129,70 +132,120 @@ class MapNode(Node):
             min_y = min(min_y, swath.odom[1])
             max_y = max(max_y, swath.odom[1])
 
-        map_origin_x = max_x + self.sonar.range
-        map_origin_y = min_y - self.sonar.range
+        map_origin_x = np.ceil(max_x) + self.sonar.range
+        map_origin_y = np.floor(min_y) - self.sonar.range
         n_rows = int(np.ceil(
-            (max_x - min_x + 2 * self.sonar.range) / self.map_resolution.value
+            (max_x - min_x + 2.0 * self.sonar.range + 1.0) / self.map_resolution.value
         ))
         n_colums = int(np.ceil(
-            (max_y - min_y + 2 * self.sonar.range) / self.map_resolution.value
+            (max_y - min_y + 2.0 * self.sonar.range + 1.0) / self.map_resolution.value
         ))
 
         print("Generating map")
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = 'Bitstream Vera Sans'
+        plt.rcParams['font.size'] = 12
+        plt.rcParams['image.aspect'] = 'equal'
 
-        for i in range(1):
-            echo_map, prob_map, observed_swaths, range_map= generate_map(
+        save_folder = '/home/repo/Navigation-brov2/images/map_generation/'
+        methods = ['knn', 'knn', 'optimized', 'optimized', 'optimized', 'original']
+        probability_thresholds = [0.1, 0.1, 0.1, 0.05, 0.1, 0.1]
+        knn_ks = [4, 4, 2, 2, 2, 2]
+        map_resolutions = [0.05, 0.1, 0.1, 0.1, 0.2, 0.1]
+
+        for method, probability_threshold, knn_k, map_resolution in zip (methods, probability_thresholds, knn_ks, map_resolutions):
+
+            self.map_resolution = Parameter('map_resolution', Parameter.Type.DOUBLE, map_resolution)
+
+            n_rows = int(np.ceil(
+                (max_x - min_x + 2.0 * self.sonar.range + 1.0) / self.map_resolution.value
+            ))
+            n_colums = int(np.ceil(
+                (max_y - min_y + 2.0 * self.sonar.range + 1.0) / self.map_resolution.value
+            ))
+
+            intensity_map, probability_map, intensity_variance, range_map= generate_map(
                 n_rows, n_colums, self.sonar.n_bins,
                 self.map_resolution.value, map_origin_x, map_origin_y,
-                self.swath_buffer, self.sonar.range,
+                deepcopy(self.swath_buffer), self.sonar.range,
                 self.swath_ground_range_resolution.value,
+                probability_threshold, knn_k, method
             )
 
-        print
+            map_origin = [map_origin_x, map_origin_y]
+
+            self.plot_maps(intensity_map, probability_map, intensity_variance, map_origin,
+                        probability_threshold, knn_k, method, save_folder=save_folder
+            )
+
+        plt.show()
 
         # filename = '/home/repo/Navigation-brov2/images/map_400_swaths_5_cm_res_new_method.csv'
         # np.savetxt(filename, echo_map, delimiter=',')
 
-        fig = plt.figure(figsize=(12, 6))
 
-        ax1 = fig.add_subplot(1, 2, 1)
-        ax1.imshow(echo_map, cmap='copper', vmin=0.6, vmax=1.4)
+    def plot_maps(self, intensity_map, probability_map, intensity_variance, map_origin,
+                  probability_threshold, knn_k, method, save_folder=None):
+                
+        if method == 'knn':
+            s = method + ' res=' + str(self.map_resolution.value) + ' knn_k=' + str(knn_k)
+        else:
+            s = method + ' p=' + str(probability_threshold) + ' res=' + str(self.map_resolution.value) + ' knn_k=' + str(knn_k)
+        
+        cmap_copper = matplotlib.cm.copper
+        cmap_copper.set_bad('w', 1.)
+        cmap_gray = matplotlib.cm.gray
+        cmap_gray.set_bad('w', 1.)
 
-        # ax2 = fig.add_subplot(1, 2, 2)
-        #For probability map
-        # ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
-        # For variance map
-        # ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=0.05)
-        # For inverse map
-        # ax2.imshow(prob_map, cmap='copper', vmin=0.6, vmax=1.4)
+        self.plot_map(
+            intensity_map, 'Intensity map - ' + s, cmap_copper, 
+            0.6, 1.4, map_origin, save_folder=save_folder
+        )
+
+        self.plot_map(
+            intensity_variance, 'Intensity variance - ' + s, cmap_copper, 
+            0.0, 0.05, map_origin, save_folder=save_folder
+        )
+
+        if method != 'knn':
+            self.plot_map(
+                probability_map, 'Probability map - ' + s, cmap_gray, 
+                0.0, 1.0, map_origin, save_folder=save_folder
+            )
+
+    
+    def plot_map(self, map, title, cmap, vmin, vmax, map_origin, tick_distanse=20,  save_folder=None):
+        
+        fig = plt.figure(title)
+
+        plt.imshow(map, cmap=cmap, vmin=vmin, vmax=vmax)
+
+        n_rows, n_colums = map.shape
 
         x_labels = []
         x_locations = []
         y_labels = []
         y_locations = []
 
-        tick_distanse = 20 # In meters
+        x_tick_start = int((map_origin[0] % tick_distanse) / self.map_resolution.value)
+        y_tick_start = int((tick_distanse - map_origin[1] % tick_distanse) / self.map_resolution.value)
 
-        for i in range(0, n_rows, int(tick_distanse/self.map_resolution.value)):
-            v = map_origin_x - i * self.map_resolution.value
+        for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin[0] - i * self.map_resolution.value
             x_labels.append(('%.2f' % v) + ' m')
             x_locations.append(i)
-        for i in range(0, n_colums, int(tick_distanse/self.map_resolution.value)):
-            v = map_origin_y + i * self.map_resolution.value
+        for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin[1] + i * self.map_resolution.value
             y_labels.append(('%.2f' % v) + ' m')
             y_locations.append(i)
 
-        ax1.set_yticks(x_locations)
-        ax1.set_yticklabels(x_labels)
-        ax1.set_xticks(y_locations)
-        ax1.set_xticklabels(y_labels)
-        # ax2.set_yticks(x_locations)
-        # ax2.set_yticklabels(x_labels)
-        # ax2.set_xticks(y_locations)
-        # ax2.set_xticklabels(y_labels)
+        plt.yticks(x_locations, x_labels)
+        plt.xticks(y_locations, y_labels)
+        plt.ylabel('North')
+        plt.xlabel('East')
 
-        plt.show()
+        plt.grid(visible=True)
 
-
-
-        input('Press any key to continue')
+        if save_folder != None:
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+        
