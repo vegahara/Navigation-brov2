@@ -40,6 +40,10 @@ RUN apt-get update && apt-get -y install tmux
 RUN apt-get update && apt-get -y install hdf5-tools imagemagick \
     graphviz xdot
 
+# Install font for plotting
+RUN apt-get install -y ttf-bitstream-vera
+RUN rm ~/.cache/matplotlib -rf
+
 # Source ros
 RUN . /opt/ros/humble/setup.sh
 
