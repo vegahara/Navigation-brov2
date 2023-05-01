@@ -67,18 +67,14 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     probability_threshold = 0.1
 
     probability_map = ones(n_rows, n_colums)
-    #probability_map = NaN
     intensity_map = fill(NaN, (n_rows, n_colums))
     range_map = fill(NaN, (n_rows, n_colums))
-    # range_map = NaN
     intensity_variance = fill(NaN,n_rows,n_colums)
-    # intensity_variance = NaN
 
     observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums) 
     probabilities = Array{Vector{Float64}}(undef, n_rows, n_colums)
     intensities = Array{Vector{Float64}}(undef, n_rows, n_colums)
     ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
-    indexes = zeros(Int, n_rows, n_colums)
 
     buffer_size = Int(ceil(length(swath_locals)))
     # buffer_size = Int(ceil(length(swath_locals) * 0.35))
@@ -142,6 +138,11 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # intensities = zeros(Float64, buffer_size) 
     # ranges = zeros(Float64, buffer_size) 
 
+    # empty!(observed_swaths_cell)
+    # empty!(probabilities)
+    # empty!(intensities)
+    # empty!(ranges)
+
     # cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
     # intensity_values = zeros(n_rows*n_colums)
     # cells_to_filter = fill(false, (n_rows, n_colums))
@@ -181,12 +182,9 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     show(to)
 
     # intensity_map = speckle_reducing_bilateral_filter(intensity_map, 0.1)
-    # intensity_map = speckle_reducing_bilateral_filter(intensity_map, 0.3)
-    # intensity_map = speckle_reducing_bilateral_filter(intensity_map, 0.5)
 
-    # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.1, 0.5)
-    # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
-    # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
+    # intensity_map = bilateral_filter(intensity_map, 0.1, 0.5)
+
 
     return intensity_map, probability_map, observed_swaths, range_map
     # return intensity_map, intensity_variance, observed_swaths, range_map
@@ -320,7 +318,6 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                         @timeit to "vector_pushing" begin
                             if !isnan(intensity)
                                 cells_to_filter[row,colum] = false
-                                # indexes[row, colum] += 1
                                 append!(observed_swaths[row, colum], swath_index) # 0 indexed
                                 append!(probabilities[row, colum], prob_observation)
                                 append!(intensities[row, colum], intensity)
@@ -511,7 +508,10 @@ function generate_map_original!(
                 ) 
                 probability = 1.0
                 prob_observation = NaN
-                index = 0
+                empty!(observed_swaths_cell)
+                empty!(probabilities)
+                empty!(intensities)
+                empty!(ranges)
             end
 
             @timeit to "swath_iteration" begin
@@ -533,14 +533,13 @@ function generate_map_original!(
                         ) :: Float64
 
                         if !isnan(intensity)
-                            index += 1
-                            intensities[index] = intensity
-                            probabilities[index] = prob_observation
-                            ranges[index] = Statistics.mean(cell_local)[1]
-                            observed_swaths_cell[index] = swath_number
+                            append!(intensities, intensity)
+                            append!(probabilities, prob_observation)
+                            append!(ranges, Statistics.mean(cell_local)[1])
+                            append!(observed_swaths_cell, swath_number)
                             probability *= (1 - prob_observation)
                         end
-                    elseif iszero(index) && 
+                    elseif isempty(probabilities) && 
                            prob_observation > probability_threshold * 0.5
                         cells_to_filter[row,col] = true
                     end
@@ -548,14 +547,13 @@ function generate_map_original!(
             end
 
             @timeit to "cell_calculation" begin
-                if index > 0
-                    intensity_map[row, col] = dot(
-                        view(intensities, 1:index),
-                        view(probabilities, 1:index) / sum(view(probabilities, 1:index))
-                    )
+                if !isempty(probabilities)
+                    intensity_map[row, col] = 
+                        dot(intensities, probabilities) / 
+                        sum(probabilities)
                     probability_map[row,col] = probability
-                    range_map[row,col] = Statistics.mean(view(ranges, 1:index))
-                    observed_swaths[row,col] = view(observed_swaths_cell, 1:index)
+                    range_map[row,col] = Statistics.mean(ranges)
+                    observed_swaths[row,col] = observed_swaths_cell
                 end
             end
         end
@@ -566,8 +564,7 @@ function generate_map_original!(
             intensity_map, intensity_variance, cell_coordinates, intensity_values, cells_to_filter
         )
     
-    return intensity_map, float.(cells_to_filter), observed_swaths, range_map
-    #return intensity_map, probability_map, observed_swaths, range_map
+    return intensity_map, probability_map, observed_swaths, range_map
 end
 
 
