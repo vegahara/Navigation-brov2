@@ -42,7 +42,7 @@ class LandmarkDetector(Node):
                         ('min_shadow_area', 0.1),
                         ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.3),
-                        ('min_landmark_height', 0.15)]
+                        ('min_landmark_height', 0.3)]
         )
                       
         (processed_swath_topic, 
@@ -364,7 +364,7 @@ class LandmarkDetector(Node):
             cv.threshold(echo_map, threshold, 1.0, cv.THRESH_BINARY_INV)
         landmark_candidates = landmark_candidates.astype(np.uint8)
 
-        str_el = cv.getStructuringElement(cv.MORPH_RECT, (3,3)) 
+        str_el = cv.getStructuringElement(cv.MORPH_RECT, (7,7)) 
         landmark_candidates = cv.morphologyEx(landmark_candidates, cv.MORPH_OPEN, str_el)
         landmark_candidates = cv.morphologyEx(landmark_candidates, cv.MORPH_CLOSE, str_el)
 
