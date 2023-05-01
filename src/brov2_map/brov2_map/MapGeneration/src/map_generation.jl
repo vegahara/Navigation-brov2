@@ -60,116 +60,116 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     ]
 
 
-    # # Optimized method
-    # knn_k = 2
-    # knn_max_dist = 0.5
-    # knn_max_variance = 0.05
-    # probability_threshold = 0.1
-
-    # probability_map = ones(n_rows, n_colums)
-    # #probability_map = NaN
-    # intensity_map = fill(NaN, (n_rows, n_colums))
-    # range_map = fill(NaN, (n_rows, n_colums))
-    # # range_map = NaN
-    # intensity_variance = fill(NaN,n_rows,n_colums)
-    # # intensity_variance = NaN
-
-    # observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums) 
-    # probabilities = Array{Vector{Float64}}(undef, n_rows, n_colums)
-    # intensities = Array{Vector{Float64}}(undef, n_rows, n_colums)
-    # ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
-    # indexes = zeros(Int, n_rows, n_colums)
-
-    # buffer_size = Int(ceil(length(swath_locals)))
-    # # buffer_size = Int(ceil(length(swath_locals) * 0.35))
-    # # buffer_size = 400
-
-    # for i=1:n_rows, j=1:n_colums
-    #     observed_swaths[i,j] = fill(-1, buffer_size)
-    #     probabilities[i,j] = zeros(Float64, buffer_size)
-    #     intensities[i,j] = zeros(Float64, buffer_size)
-    #     ranges[i,j] = zeros(Float64, buffer_size)
-    # end
-
-    # cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
-    # intensity_values = zeros(n_rows*n_colums)
-
-    # cell_transformations = Array{SVector{2,Float64}}(undef, n_rows+1, n_colums+1)
-    # cell_visited = Array{Bool}(undef, n_rows, n_colums)
-    # cells_to_filter = fill(false, (n_rows, n_colums))
-    # cells_to_visit = CircularDeque{SVector{2,Int}}(Int((20*2*sonar_range)/map_resolution))
-
-    # intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_opt" generate_map_optimized!(
-    #     n_rows, n_colums, n_bins, map_resolution, 
-    #     map_origin, swath_locals, sonar_range, probability_threshold,
-    #     sonar_beta, swath_slant_resolution,
-    #     knn_k, knn_max_dist, knn_max_variance,
-    #     probability_map, intensity_map, range_map,
-    #     observed_swaths, probabilities, intensities, ranges,
-    #     cell_transformations, intensity_variance, 
-    #     cell_visited, cells_to_visit, indexes, cell_coordinates, intensity_values, cells_to_filter, 
-    #     sonar_theta, sonar_alpha, sonar_x_offset, sonar_y_offset, sonar_z_offset, to)
-
-
-    # Original method
+    # Optimized method
     knn_k = 2
-    knn_max_dist = 0.2
+    knn_max_dist = 0.5
     knn_max_variance = 0.05
     probability_threshold = 0.1
 
     probability_map = ones(n_rows, n_colums)
+    #probability_map = NaN
     intensity_map = fill(NaN, (n_rows, n_colums))
     range_map = fill(NaN, (n_rows, n_colums))
+    # range_map = NaN
     intensity_variance = fill(NaN,n_rows,n_colums)
+    # intensity_variance = NaN
 
-    buffer_size = length(swath_locals)
+    observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums) 
+    probabilities = Array{Vector{Float64}}(undef, n_rows, n_colums)
+    intensities = Array{Vector{Float64}}(undef, n_rows, n_colums)
+    ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
+    indexes = zeros(Int, n_rows, n_colums)
 
-    observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums)
+    buffer_size = Int(ceil(length(swath_locals)))
+    # buffer_size = Int(ceil(length(swath_locals) * 0.35))
+    # buffer_size = 400
 
     for i=1:n_rows, j=1:n_colums
         observed_swaths[i,j] = fill(-1, buffer_size)
+        probabilities[i,j] = zeros(Float64, buffer_size)
+        intensities[i,j] = zeros(Float64, buffer_size)
+        ranges[i,j] = zeros(Float64, buffer_size)
     end
-
-    observed_swaths_cell = zeros(Int, buffer_size)
-    probabilities = zeros(Float64, buffer_size)
-    intensities = zeros(Float64, buffer_size) 
-    ranges = zeros(Float64, buffer_size) 
 
     cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
     intensity_values = zeros(n_rows*n_colums)
-     cells_to_filter = fill(false, (n_rows, n_colums))
 
-    cell_local = Array{SVector{2,Float64}}(undef, 2, 2)
+    cell_transformations = Array{SVector{2,Float64}}(undef, n_rows+1, n_colums+1)
+    cell_visited = Array{Bool}(undef, n_rows, n_colums)
+    cells_to_filter = fill(false, (n_rows, n_colums))
+    cells_to_visit = CircularDeque{SVector{2,Int}}(Int((20*2*sonar_range)/map_resolution))
 
-    intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_org" generate_map_original!(
+    intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_opt" generate_map_optimized!(
         n_rows, n_colums, n_bins, map_resolution, 
         map_origin, swath_locals, sonar_range, probability_threshold,
-        sonar_beta, swath_ground_resolution,
+        sonar_beta, swath_slant_resolution,
         knn_k, knn_max_dist, knn_max_variance,
         probability_map, intensity_map, range_map,
-        observed_swaths, intensity_variance, cell_local, 
-        observed_swaths_cell, probabilities, intensities, cells_to_filter,
-        ranges, cell_coordinates, intensity_values, to
-    )
-    
-    # # Raw knn
-    # knn_k = 4
-    # knn_max_dist = 0.3
-    # knn_max_variance = 0.05
+        observed_swaths, probabilities, intensities, ranges,
+        cell_transformations, intensity_variance, 
+        cell_visited, cells_to_visit, indexes, cell_coordinates, intensity_values, cells_to_filter, 
+        sonar_theta, sonar_alpha, sonar_x_offset, sonar_y_offset, sonar_z_offset, to)
 
+
+    # # Original method
+    # knn_k = 2
+    # knn_max_dist = 0.2
+    # knn_max_variance = 0.05
+    # probability_threshold = 0.1
+
+    # probability_map = ones(n_rows, n_colums)
     # intensity_map = fill(NaN, (n_rows, n_colums))
+    # range_map = fill(NaN, (n_rows, n_colums))
     # intensity_variance = fill(NaN,n_rows,n_colums)
 
-    # bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
-    # intensity_values = zeros(2 * n_bins * length(swath_locals))
+    # buffer_size = length(swath_locals)
 
-    # observed_swaths = fill(Int[], (n_rows, n_colums))
-    # range_map = fill(NaN, (n_rows, n_colums))
+    # observed_swaths = Array{Vector{Int}}(undef, n_rows, n_colums)
 
-    # intensity_map, intensity_variance = @timeit to "map_generation_knn" generate_map_knn!(
+    # for i=1:n_rows, j=1:n_colums
+    #     observed_swaths[i,j] = fill(-1, buffer_size)
+    # end
+
+    # observed_swaths_cell = zeros(Int, buffer_size)
+    # probabilities = zeros(Float64, buffer_size)
+    # intensities = zeros(Float64, buffer_size) 
+    # ranges = zeros(Float64, buffer_size) 
+
+    # cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
+    # intensity_values = zeros(n_rows*n_colums)
+    # cells_to_filter = fill(false, (n_rows, n_colums))
+
+    # cell_local = Array{SVector{2,Float64}}(undef, 2, 2)
+
+    # intensity_map, probability_map, observed_swaths, range_map = @timeit to "map_generation_org" generate_map_original!(
     #     n_rows, n_colums, n_bins, map_resolution, 
-    #     map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
-    #     swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
+    #     map_origin, swath_locals, sonar_range, probability_threshold,
+    #     sonar_beta, swath_ground_resolution,
+    #     knn_k, knn_max_dist, knn_max_variance,
+    #     probability_map, intensity_map, range_map,
+    #     observed_swaths, intensity_variance, cell_local, 
+    #     observed_swaths_cell, probabilities, intensities, cells_to_filter,
+    #     ranges, cell_coordinates, intensity_values, to
+    # )
+    
+    # Raw knn
+    knn_k = 4
+    knn_max_dist = 0.3
+    knn_max_variance = 0.05
+
+    intensity_map = fill(NaN, (n_rows, n_colums))
+    intensity_variance = fill(NaN,n_rows,n_colums)
+
+    bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
+    intensity_values = zeros(2 * n_bins * length(swath_locals))
+
+    observed_swaths = fill(Int[], (n_rows, n_colums))
+    range_map = fill(NaN, (n_rows, n_colums))
+
+    intensity_map, intensity_variance = @timeit to "map_generation_knn" generate_map_knn!(
+        n_rows, n_colums, n_bins, map_resolution, 
+        map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
+        swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
 
     show(to)
 
@@ -181,8 +181,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
 
-    return intensity_map, probability_map, observed_swaths, range_map
-    # return intensity_map, intensity_variance, observed_swaths, range_map
+    # return intensity_map, probability_map, observed_swaths, range_map
+    return intensity_map, intensity_variance, observed_swaths, range_map
 end
  
 
@@ -678,29 +678,55 @@ function generate_map_knn!(n_rows, n_colums, n_bins, map_resolution,
                 end
             end
         end
+        resize!(bin_coordinates, n_data_points)
     end
 
     kdtree = @timeit to "build_kd_tree" NearestNeighbors.KDTree(
-        view(bin_coordinates, 1:n_data_points), 
-        Distances.Euclidean()
+        bin_coordinates, 
+        Distances.Euclidean(),
+        reorder=false,
     )
 
-    idx = Vector{Int}(undef, knn_k)
-    dist = Vector{Float64}(undef, knn_k)
-    svals = SVector{knn_k, Float64}
+    idxs = Vector{Int}(undef, knn_k)
+    dists = Vector{Float64}(undef, knn_k)
+    svals = Vector{Float64}(undef, knn_k)
+    point = SVector(NaN, NaN)
+    init_min = NaN
 
     @timeit to "generate_map" begin
         for row=1:n_rows, col=1:n_colums
 
             @timeit to "generate_cell" begin 
-                @timeit to "knn" NearestNeighbors.knn_point!(
-                    kdtree,
-                    map_origin + SVector{2,Float64}(-(row-1)*map_resolution, (col-1)*map_resolution),
-                    false, dist, idx, always_false
-                )
+                @timeit to "knn" begin
+                    fill!(idxs, -1)
+                    fill!(dists, typemax(eltype(dists)))
+                    point = map_origin + SVector{2,Float64}(-(row-1)*map_resolution, (col-1)*map_resolution)
+
+                    init_min = NearestNeighbors.get_min_distance(kdtree.hyper_rec, point)
+
+                    NearestNeighbors.knn_kernel!(
+                        kdtree, 
+                        1, 
+                        point, 
+                        idxs, 
+                        dists, 
+                        init_min, 
+                        always_false)
+
+                    @simd for i in eachindex(dists)
+                        @inbounds dists[i] = NearestNeighbors.eval_end(kdtree.metric, dists[i])
+                    end
+
+                    NearestNeighbors.heap_sort_inplace!(dists, idxs)
+                end
 
                 @timeit to "cell_calculation" begin
-                    svals = view(intensity_values, idx[dist .<= knn_max_dist])
+                    empty!(svals)
+                    for i in 1:knn_k
+                        if dists[i] <= knn_max_dist
+                            append!(svals, intensity_values[idxs[i]])
+                        end
+                    end
 
                     if length(svals) > 0
                         var = Statistics.var(svals)
@@ -741,22 +767,45 @@ function knn_filtering!(n_rows, n_colums, map_resolution, knn_k, knn_max_dist, k
         Distances.Euclidean()
     )
     
-    idx = Vector{Int}(undef, knn_k)
-    dist = Vector{Float64}(undef, knn_k)
-    svals = SVector{knn_k, Float64}
+    idxs = Vector{Int}(undef, knn_k)
+    dists = Vector{Float64}(undef, knn_k)
+    svals = Vector{Float64}(undef, knn_k)
+    point = SVector(NaN, NaN)
+    init_min = NaN
 
     for row=1:n_rows, col=1:n_colums
+
         if !cells_to_filter[row,col] || !isnan(intensity_map[row,col])
             continue
         end
 
-        NearestNeighbors.knn_point!(
-            kdtree,
-            SVector((row-1)*map_resolution, (col-1)*map_resolution),
-            false, dist, idx, always_false
-        )
+        fill!(idxs, -1)
+        fill!(dists, typemax(eltype(dists)))
+        empty!(svals)
 
-        svals = view(intensity_values, idx[dist .<= knn_max_dist])
+        point = SVector{2,Float64}((row-1)*map_resolution, (col-1)*map_resolution)
+        init_min = NearestNeighbors.get_min_distance(kdtree.hyper_rec, point)
+
+        NearestNeighbors.knn_kernel!(
+            kdtree, 
+            1, 
+            point, 
+            idxs, 
+            dists, 
+            init_min, 
+            always_false)
+
+        @simd for i in eachindex(dists)
+            @inbounds dists[i] = NearestNeighbors.eval_end(kdtree.metric, dists[i])
+        end
+
+        NearestNeighbors.heap_sort_inplace!(dists, idxs)
+
+        for i in 1:knn_k
+            if dists[i] <= knn_max_dist
+                append!(svals, intensity_values[idxs[i]])
+            end
+        end
 
         if length(svals) > 0
             var = Statistics.var(svals)
@@ -764,7 +813,7 @@ function knn_filtering!(n_rows, n_colums, map_resolution, knn_k, knn_max_dist, k
                 intensity_map[row,col] = Statistics.mean(svals)
                 intensity_variance[row,col] = var
             else
-                intensity_map[row,col] = Statistics.quantile(svals, 10/100)
+                intensity_map[row,col] = Statistics.quantile!(svals, 10/100)
                 intensity_variance[row,col] = knn_max_variance
             end
         end
