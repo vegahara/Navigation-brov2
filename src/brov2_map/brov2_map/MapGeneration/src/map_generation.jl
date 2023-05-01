@@ -91,6 +91,13 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         ranges[i,j] = zeros(Float64, buffer_size)
     end
 
+    for i=1:n_rows, j=1:n_colums
+        empty!(observed_swaths[i,j])
+        empty!(probabilities[i,j])
+        empty!(intensities[i,j])
+        empty!(ranges[i,j])
+    end
+
     cell_coordinates = fill(SVector(0.0,0.0), n_rows*n_colums)
     intensity_values = zeros(n_rows*n_colums)
 
@@ -152,24 +159,24 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     #     ranges, cell_coordinates, intensity_values, to
     # )
     
-    # Raw knn
-    knn_k = 4
-    knn_max_dist = 0.3
-    knn_max_variance = 0.05
+    # # Raw knn
+    # knn_k = 4
+    # knn_max_dist = 0.3
+    # knn_max_variance = 0.05
 
-    intensity_map = fill(NaN, (n_rows, n_colums))
-    intensity_variance = fill(NaN,n_rows,n_colums)
+    # intensity_map = fill(NaN, (n_rows, n_colums))
+    # intensity_variance = fill(NaN,n_rows,n_colums)
 
-    bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
-    intensity_values = zeros(2 * n_bins * length(swath_locals))
+    # bin_coordinates = fill(SVector(0.0,0.0), 2 * n_bins * length(swath_locals))
+    # intensity_values = zeros(2 * n_bins * length(swath_locals))
 
-    observed_swaths = fill(Int[], (n_rows, n_colums))
-    range_map = fill(NaN, (n_rows, n_colums))
+    # observed_swaths = fill(Int[], (n_rows, n_colums))
+    # range_map = fill(NaN, (n_rows, n_colums))
 
-    intensity_map, intensity_variance = @timeit to "map_generation_knn" generate_map_knn!(
-        n_rows, n_colums, n_bins, map_resolution, 
-        map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
-        swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
+    # intensity_map, intensity_variance = @timeit to "map_generation_knn" generate_map_knn!(
+    #     n_rows, n_colums, n_bins, map_resolution, 
+    #     map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
+    #     swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
 
     show(to)
 
@@ -181,8 +188,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
 
-    # return intensity_map, probability_map, observed_swaths, range_map
-    return intensity_map, intensity_variance, observed_swaths, range_map
+    return intensity_map, probability_map, observed_swaths, range_map
+    # return intensity_map, intensity_variance, observed_swaths, range_map
 end
  
 
@@ -313,12 +320,13 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                         @timeit to "vector_pushing" begin
                             if !isnan(intensity)
                                 cells_to_filter[row,colum] = false
-                                indexes[row, colum] += 1
-                                observed_swaths[row, colum][indexes[row,colum]] = swath_index # 0 indexed
-                                probabilities[row, colum][indexes[row,colum]] = prob_observation
-                                intensities[row, colum][indexes[row,colum]] = intensity
-                                ranges[row, colum][indexes[row,colum]] = Statistics.mean(
+                                # indexes[row, colum] += 1
+                                append!(observed_swaths[row, colum], swath_index) # 0 indexed
+                                append!(probabilities[row, colum], prob_observation)
+                                append!(intensities[row, colum], intensity)
+                                append!(ranges[row, colum], Statistics.mean(
                                     view(cell_transformations, row:row+1, colum:colum+1))[1]
+                                )
                             end
                         end
 
@@ -330,7 +338,7 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                                 end
                             end
                         end
-                    elseif iszero(indexes[row,colum]) && prob_observation > 0.0 
+                    elseif isempty(probabilities[row, colum]) && prob_observation > 0.0 
                         cells_to_filter[row,colum] = true
                     end 
                 end
@@ -341,18 +349,22 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
     @timeit to "map_iteration" begin
         for row=1:n_rows, colum=1:n_colums
 
-            if indexes[row,colum] == 0
+            if isempty(probabilities[row, colum])
                 continue
             end
             
-            intensity_map[row, colum] = dot(
-                view(intensities[row, colum], 1:indexes[row,colum]),
-                view(probabilities[row, colum], 1:indexes[row,colum]) / 
-                sum(view(probabilities[row, colum], 1:indexes[row,colum]))
-            )
+            intensity_map[row, colum] = 
+                dot(intensities[row, colum], probabilities[row, colum]) / 
+                sum(probabilities[row, colum])
 
-            probability_map[row, colum] *= prod(1 .- view(probabilities[row, colum], 1:indexes[row,colum]))
-            range_map[row, colum] = Statistics.mean(view(ranges[row, colum], 1:indexes[row,colum]))
+            for i in 1:length(probabilities[row, colum])
+                probabilities[row, colum][i] = 1 - probabilities[row, colum][i]
+            end
+
+            probability_map[row, colum] = prod(probabilities[row, colum])
+
+            range_map[row, colum] = Statistics.mean(ranges[row, colum])
+    
         end
     end
 
