@@ -31,7 +31,7 @@ def load_pickle(filename):
 
 load_pickle = py"load_pickle"
 
-filename = "/home/repo/Navigation-brov2/images/full_training_200_swaths/pose_and_landmarks_training_data.pickle"
+filename = "/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/pose_and_landmarks_training_data.pickle"
 
 timesteps = load_pickle(filename)
 
@@ -275,7 +275,7 @@ for (timestep, data) in enumerate(timesteps)
 
     p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
 
-    p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/full_training_200_swaths/2D_plot.pdf")
+    p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/2D_plot.pdf")
 
 end
 
@@ -287,6 +287,6 @@ end
 
 p2 = drawGraph(fg)
     
-p2 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/full_training_200_swaths/graph_plot.pdf")
+p2 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/graph_plot.pdf")
 
 end # module Slam

@@ -491,7 +491,7 @@ class LandmarkDetector(Node):
 
         # timestep = Timestep(swaths[0].odom, new_landmarks)
 
-        # filename = '/home/repo/Navigation-brov2/images/full_training_200_swaths/pose_and_landmarks_training_data.pickle'
+        # filename = '/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/pose_and_landmarks_training_data.pickle'
 
         # with open(filename, "ab") as f:
         #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -581,7 +581,7 @@ class LandmarkDetector(Node):
         plt.draw()
         plt.pause(0.005)
         # self.n_timesteps += 1
-        # plt.savefig('/home/repo/Navigation-brov2/images/full_training_200_swaths/plt_x' + str(self.n_timesteps))
+        # plt.savefig('/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/plt_x' + str(self.n_timesteps))
         
         # plt.show()
         # input('Press any key to continue')
