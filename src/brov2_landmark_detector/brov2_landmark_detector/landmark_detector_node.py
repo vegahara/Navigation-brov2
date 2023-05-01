@@ -238,15 +238,6 @@ class LandmarkDetector(Node):
             / self.map_full.resolution
         ) 
 
-        # print('map origin x: ', map_origin_x)
-        # print('map origin y: ', map_origin_y) 
-        # print('n rows: ', n_rows)
-        # print('n colum: ', n_colums)
-        # print('map trans x: ', map_transformation_x)
-        # print('map trans y: ', map_transformation_y)
-        # print('old n rows: ', self.map_full.n_rows)
-        # print('old n colums: ', self.map_full.n_colums)
-
         new_map = Map(n_rows,n_colums,self.map_full.resolution)
         new_map.origin = [map_origin_x, map_origin_y]
         new_map.intensity_map[map_transformation_x:map_transformation_x+self.map_full.n_rows,
@@ -409,15 +400,6 @@ class LandmarkDetector(Node):
 
                     observed_swaths.extend(observed_swaths_map[row][col])
 
-                    cell_range = range_map[row][col]
-
-                    if cell_range < min_ground_range:
-                        min_ground_range = cell_range
-                        local_landmark_pos = [col,row]
-                
-                    if cell_range > max_ground_range:
-                        max_ground_range = cell_range
-
             if filter_out:
                 continue
 
@@ -427,12 +409,24 @@ class LandmarkDetector(Node):
             if len(observed_swaths) == 0:
                 continue
 
-            altitude = 0.0
+            observed_swaths.sort()
+            center_swath_idx = observed_swaths[int(len(observed_swaths) // 2)]
 
-            for i in observed_swaths:
-                altitude += swaths[i].altitude
+            for col in range(x,x+w):
+                for row in range(y,y+h):
+                    if not (center_swath_idx in observed_swaths_map[row][col]):
+                        continue
 
-            altitude /= len(observed_swaths)
+                    cell_range = range_map[row][col]
+
+                    if cell_range < min_ground_range:
+                        min_ground_range = cell_range
+                        local_landmark_pos = [col,row]
+                
+                    if cell_range > max_ground_range:
+                        max_ground_range = cell_range
+
+            altitude = swaths[center_swath_idx].altitude
 
             min_slant_range = np.sqrt(min_ground_range**2 + altitude**2)
             max_slant_range = np.sqrt(max_ground_range**2 + altitude**2)
@@ -442,15 +436,8 @@ class LandmarkDetector(Node):
             if landmark_height < self.min_landmark_height.value:
                 continue
 
-            x_avg = 0
-            y_avg = 0
-
-            for i in observed_swaths:
-                x_avg += swaths[i].odom[0]
-                y_avg += swaths[i].odom[1]
-
-            x_avg /= len(observed_swaths)
-            y_avg /= len(observed_swaths)
+            x_pose = swaths[center_swath_idx].odom[0]
+            y_pose = swaths[center_swath_idx].odom[1]
 
             actual_ground_range = np.sqrt(min_slant_range**2 - (altitude - landmark_height)**2)
             global_landmark_pos = [
@@ -459,25 +446,13 @@ class LandmarkDetector(Node):
             ]
 
             v = [
-                global_landmark_pos[0] - x_avg,
-                global_landmark_pos[1] - y_avg
+                global_landmark_pos[0] - x_pose,
+                global_landmark_pos[1] - y_pose
             ]
             v = [
                 v[0] / np.sqrt(v[0]**2 + v[1]**2),
                 v[1] / np.sqrt(v[0]**2 + v[1]**2),
             ]
-
-            # print('Height: ', landmark_height)
-            # print('Altitude: ', altitude)
-            # print('Min_slant_range: ', min_slant_range)
-            # print('Max_slant_range: ', max_slant_range)
-            # print('Min_ground_range: ', min_ground_range)
-            # print('Max_ground_range: ', max_ground_range)
-            # print('Actual_ground_range: ', actual_ground_range)
-            # print('Global landmark_pos: ', global_landmark_pos)
-            # print('x_avg: ', x_avg)
-            # print('y_avg: ', y_avg)     
-            # print('v: ', v)
 
             # Corrected position
             global_landmark_pos = [
