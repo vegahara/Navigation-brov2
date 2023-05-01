@@ -9,6 +9,7 @@ from rclpy.node import Node
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
+from adjustText import adjust_text
 from scipy.spatial.transform import Rotation as R
 import copy
 import pickle
@@ -480,7 +481,9 @@ class LandmarkDetector(Node):
                 global_landmark_pos[1],
                 landmark_range,
                 landmark_bearing,
-                landmark_height
+                landmark_height,
+                area_shadow,
+                fill_rate
             ))
 
             new_landmarks.append(self.landmarks[-1])
@@ -497,6 +500,11 @@ class LandmarkDetector(Node):
         #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # Plotting
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = 'Bitstream Vera Sans'
+        plt.rcParams['font.size'] = 12
+        plt.rcParams['image.aspect'] = 'equal'
+
         landmark_candidates = cv.bitwise_and(
             landmark_candidates,landmark_candidates, mask = mask
         )
@@ -524,17 +532,19 @@ class LandmarkDetector(Node):
                 -(landmark.x - self.map_full.origin[0]) / self.map_full.resolution,
                 marker='x', c='k'
             )
+        texts = []
+
         for landmark in new_landmarks:
             self.ax2.scatter(
                 (landmark.y - map_origin_y) / self.map_resolution.value,
                 -(landmark.x - map_origin_x) / self.map_resolution.value,
                 marker='x', c='k'
             )
-            self.ax2.annotate(
-                str(landmark.height),
-                ((landmark.y - map_origin_y) / self.map_resolution.value,
-                -(landmark.x - map_origin_x) / self.map_resolution.value)
-            )
+            texts.append(self.ax2.text(
+                x=(landmark.y - map_origin_y) / self.map_resolution.value,
+                y=-(landmark.x - map_origin_x) / self.map_resolution.value,
+                s=f"$h = {landmark.height:.2f} m$\n$A = {landmark.area:.2f} m^2$\n$fr = {landmark.fill_rate:.2f}$"
+            ))
 
         for swath in self.processed_swaths:
             self.ax1.scatter(
@@ -553,6 +563,9 @@ class LandmarkDetector(Node):
                 marker='.',
             )
 
+        if len(texts) > 0:
+            adjust_text(texts)
+
         x_labels = []
         x_locations = []
         y_labels = []
@@ -560,12 +573,15 @@ class LandmarkDetector(Node):
 
         tick_distanse = 20 # In meters
 
-        for i in range(0, self.map_full.n_rows, int(tick_distanse/self.map_resolution.value)):
-            v = self.map_full.origin[0] - i * self.map_resolution.value
+        x_tick_start = int((map_origin_x % tick_distanse) / self.map_resolution.value)
+        y_tick_start = int((tick_distanse - map_origin_y % tick_distanse) / self.map_resolution.value)
+
+        for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin_x - i * self.map_resolution.value
             x_labels.append(('%.2f' % v) + ' m')
             x_locations.append(i)
-        for i in range(0, self.map_full.n_colums, int(tick_distanse/self.map_resolution.value)):
-            v = self.map_full.origin[1] + i * self.map_resolution.value
+        for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin_y + i * self.map_resolution.value
             y_labels.append(('%.2f' % v) + ' m')
             y_locations.append(i)
 

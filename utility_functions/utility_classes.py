@@ -39,12 +39,14 @@ class Map:
             self.probability_map = np.full((n_rows, n_colums), np.nan, dtype=float)
 
 class Landmark:
-    def __init__(self, x, y, range, bearing, height) -> None:
-        self.x = x              # Global x position of landmark
-        self.y = y              # Global y position of landmark
-        self.range = range      # Range between current pose and landmark
-        self.bearing = bearing  # Bearing between current pose and landmark
-        self.height = height    # Estimated height of landmark
+    def __init__(self, x, y, range, bearing, height, area, fill_rate) -> None:
+        self.x = x                  # Global x position of landmark
+        self.y = y                  # Global y position of landmark
+        self.range = range          # Range between current pose and landmark
+        self.bearing = bearing      # Bearing between current pose and landmark
+        self.height = height        # Estimated height of landmark
+        self.area = area            # Total area of the shadow landmark in m²
+        self.fill_rate = fill_rate  # Fillrate of the square bounding box around the landmark
 
 class Timestep:
     def __init__(self, pose, measurements) -> None:
