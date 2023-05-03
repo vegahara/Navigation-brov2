@@ -35,7 +35,8 @@ class SwathProcessingNode(Node):
             ('sonar_transducer_alpha', np.pi/3),
             ('sonar_x_offset', -0.2532),
             ('sonar_y_offset', 0.082),
-            ('sonar_z_offset', 0.033)
+            ('sonar_z_offset', 0.033),
+            ('altitude_attitude_correction', False)
         ])
             
         (swath_raw_topic_name, swath_processed_topic_name, 
@@ -45,7 +46,7 @@ class SwathProcessingNode(Node):
         sonar_n_bins, sonar_range, 
         sonar_transducer_theta, sonar_transducer_alpha,
         sonar_x_offset, sonar_y_offset,
-        sonar_z_offset) = self.get_parameters([
+        sonar_z_offset, altitude_attitude_correction) = self.get_parameters([
             'swath_raw_topic_name',
             'swath_processed_topic_name', 
             'altitude_topic_name',
@@ -59,7 +60,8 @@ class SwathProcessingNode(Node):
             'sonar_transducer_alpha',
             'sonar_x_offset',
             'sonar_y_offset',
-            'sonar_z_offset'
+            'sonar_z_offset',
+            'altitude_attitude_correction'
         ])
 
         # Publishers and subscribers
@@ -82,6 +84,7 @@ class SwathProcessingNode(Node):
         # Variable initialization
         self.swath_normalizaton_smoothing_param = swath_normalizaton_smoothing_param.value
         self.swath_ground_range_resolution = swath_ground_range_resolution.value
+        self.altitude_attitude_correction = altitude_attitude_correction.value
         self.unprocessed_swaths = []
         self.unprocessed_altitudes = []
         self.unprocessed_odoms = []
@@ -153,15 +156,19 @@ class SwathProcessingNode(Node):
 
     ### HELPER FUNCTIONS
     def get_corrected_sonar_altitude(self, swath:Swath, roll:float, pitch:float):
+        if self.altitude_attitude_correction:
+            altitude = swath.altitude * np.cos(roll) * np.cos(pitch)
+        else:
+            altitude = swath.altitude
 
-        corr_alt_port = ((swath.altitude - self.sonar.z_offset) * \
-                        np.cos(roll) * np.cos(pitch)) + \
+        corr_alt_port = altitude - \
+                        self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
                         self.sonar.x_offset * np.sin(pitch) + \
                         self.sonar.y_offset * np.sin(roll)
-        corr_alt_stb = ((swath.altitude - self.sonar.z_offset) * \
-                        np.cos(roll) * np.cos(pitch)) + \
-                        self.sonar.x_offset * np.sin(pitch) - \
-                        self.sonar.y_offset * np.sin(roll)
+        corr_alt_stb = altitude - \
+                       self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
+                       self.sonar.x_offset * np.sin(pitch) - \
+                       self.sonar.y_offset * np.sin(roll)
         
         return corr_alt_port, corr_alt_stb
     
