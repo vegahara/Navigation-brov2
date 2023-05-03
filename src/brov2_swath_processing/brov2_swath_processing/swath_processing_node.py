@@ -5,6 +5,7 @@ from utility_classes import Swath, SideScanSonar
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.ticker import Formatter
 from csaps import csaps
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
@@ -524,9 +525,11 @@ class SwathProcessingNode(Node):
         start_index = 0
         end_index = 1500
         save_folder = '/home/repo/Navigation-brov2/images/swath_processing/'
-        plt.rcParams['font.family'] = 'sans-serif'
-        plt.rcParams['font.sans-serif'] = 'Bitstream Vera Sans'
+        plt.rcParams['text.usetex'] = True
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.sans-serif'] = 'Charter'
         plt.rcParams['font.size'] = 12
+        plt.rcParams['figure.constrained_layout.use'] = True
 
 
         if len(self.swaths_raw) >= end_index:
@@ -601,7 +604,7 @@ class SwathProcessingNode(Node):
             save_folder
         )
 
-        labels = ['-30.0 m', '-15.0 m', '0.0 m', '15.0 m', '30.0 m']
+        labels = ['$-30.0 m$', '$-15.0 m$', '$0.0 m$', '$15.0 m$', '$30.0 m$']
 
         self.plot_swaths(
             self.swaths_slant_range,
@@ -624,23 +627,44 @@ class SwathProcessingNode(Node):
 
         im = np.empty((len(swaths), self.sonar.n_bins * 2))
 
+        distance_traveled = []
+        current_dist = 0.0
+        old_x = swaths[0].odom.pose.pose.position.x
+        old_y = swaths[0].odom.pose.pose.position.y
+
         for i, swath in enumerate(swaths):
             im[i][:] = np.concatenate((swath.data_port, swath.data_stb))
+
+            delta_x = swath.odom.pose.pose.position.x - old_x
+            delta_y = swath.odom.pose.pose.position.y - old_y
+            delta_dist = np.sqrt(delta_x**2 + delta_y**2)
+            current_dist += delta_dist
+
+            distance_traveled.append(current_dist)
+            
+            old_x = swath.odom.pose.pose.position.x
+            old_y = swath.odom.pose.pose.position.y
 
         fig = plt.figure(title)
 
         cmap_copper = matplotlib.cm.copper
         cmap_copper.set_bad('w', 1.)
 
-        plt.imshow(im, cmap=cmap_copper, vmin=vmin , vmax=vmax)
-        plt.xlabel('Across track')
-        plt.ylabel('Along track')
+        ax1 = fig.add_subplot(111)
+        ax1.imshow(im, cmap=cmap_copper, vmin=vmin , vmax=vmax)
+        ax1.set_xlabel('Across track [bin \#]')
+        ax1.set_ylabel('Along track [swath \#]')
 
         if labels == None:
-            labels = ['-1000', '-500', '0', '500', '1000']
+            labels = ['$-1000$', '$-500$', '$0$', '$500$', '$1000$']
 
-        ticks = [0.0, 500.0, 1000.0, 1500.0, 1999.0]
-        plt.xticks(ticks, labels)
+        pos = [0.0, 500.0, 1000.0, 1500.0, 1999.0]
+        ax1.set_xticks(pos, labels)
+
+        # Show distance traveled on right side
+        ax2 = ax1.secondary_yaxis('right')
+        ax2.yaxis.set_major_formatter(DistanceTraveldFormatter(distance_traveled))
+        ax2.set_ylabel('Distance traveled')
 
         if save_folder != None:
             plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
@@ -698,3 +722,14 @@ class SwathProcessingNode(Node):
 
         if save_folder != None:
             plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+
+
+class DistanceTraveldFormatter(Formatter):
+    def __init__(self, distance_traveled):
+        self.distance_traveled = distance_traveled
+
+    def __call__(self, x, pos=0):
+        try:
+            return '$' + ('%.2f' % self.distance_traveled[int(round(x))]) + ' m$'
+        except IndexError:
+            pass
