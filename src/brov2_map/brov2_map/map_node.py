@@ -9,6 +9,7 @@ from math import pi
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tick
+from matplotlib.ticker import Formatter
 from copy import deepcopy
 from scipy.spatial.transform import Rotation as R
 
@@ -37,7 +38,7 @@ class MapNode(Node):
                         ('sonar_transducer_alpha', pi/3),
                         ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 400),
+                        ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -142,9 +143,11 @@ class MapNode(Node):
         ))
 
         print("Generating map")
-        plt.rcParams['font.family'] = 'sans-serif'
-        plt.rcParams['font.sans-serif'] = 'Bitstream Vera Sans'
+        plt.rcParams['text.usetex'] = True
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.sans-serif'] = 'Charter'
         plt.rcParams['font.size'] = 12
+        plt.rcParams['figure.constrained_layout.use'] = True
         plt.rcParams['image.aspect'] = 'equal'
 
         save_folder = '/home/repo/Navigation-brov2/images/map_generation/'
@@ -152,6 +155,7 @@ class MapNode(Node):
         probability_thresholds = [0.1, 0.1, 0.1, 0.05, 0.1, 0.1]
         knn_ks = [4, 4, 2, 2, 2, 2]
         map_resolutions = [0.05, 0.1, 0.1, 0.1, 0.2, 0.1]
+        knn_max_variance = 0.05
 
         for method, probability_threshold, knn_k, map_resolution in zip (methods, probability_thresholds, knn_ks, map_resolutions):
 
@@ -164,18 +168,20 @@ class MapNode(Node):
                 (max_y - min_y + 2.0 * self.sonar.range + 1.0) / self.map_resolution.value
             ))
 
-            intensity_map, probability_map, intensity_variance, range_map= generate_map(
+            intensity_map, probability_map, intensity_variance, unfiltered_map = generate_map(
                 n_rows, n_colums, self.sonar.n_bins,
                 self.map_resolution.value, map_origin_x, map_origin_y,
                 deepcopy(self.swath_buffer), self.sonar.range,
                 self.swath_ground_range_resolution.value,
-                probability_threshold, knn_k, method
+                probability_threshold, knn_k, method, knn_max_variance
             )
+
+            probability_map = 1 - probability_map
 
             map_origin = [map_origin_x, map_origin_y]
 
-            self.plot_maps(intensity_map, probability_map, intensity_variance, map_origin,
-                        probability_threshold, knn_k, method, save_folder=save_folder
+            self.plot_maps(intensity_map, probability_map, intensity_variance, unfiltered_map, map_origin,
+                        probability_threshold, knn_k, knn_max_variance, method, save_folder=save_folder
             )
 
         plt.show()
@@ -184,8 +190,8 @@ class MapNode(Node):
         # np.savetxt(filename, echo_map, delimiter=',')
 
 
-    def plot_maps(self, intensity_map, probability_map, intensity_variance, map_origin,
-                  probability_threshold, knn_k, method, save_folder=None):
+    def plot_maps(self, intensity_map, probability_map, intensity_variance, unfiltered_map, map_origin,
+                  probability_threshold, knn_k, knn_max_variance, method, save_folder=None):
                 
         if method == 'knn':
             s = method + ' res=' + str(self.map_resolution.value) + ' knn_k=' + str(knn_k)
@@ -194,23 +200,29 @@ class MapNode(Node):
         
         cmap_copper = matplotlib.cm.copper
         cmap_copper.set_bad('w', 1.)
-        cmap_gray = matplotlib.cm.gray
-        cmap_gray.set_bad('w', 1.)
+        cmap_viridis = matplotlib.cm.viridis
+        cmap_viridis.set_bad('w', 1.)
+        cmap_binary = matplotlib.cm.binary
+        cmap_binary.set_bad('w', 1.)
 
         self.plot_map(
             intensity_map, 'Intensity map - ' + s, cmap_copper, 
             0.6, 1.4, map_origin, save_folder=save_folder
         )
 
-        self.plot_map(
-            intensity_variance, 'Intensity variance - ' + s, cmap_copper, 
-            0.0, 0.05, map_origin, save_folder=save_folder
-        )
-
-        if method != 'knn':
+        if method == 'knn':
             self.plot_map(
-                probability_map, 'Probability map - ' + s, cmap_gray, 
+                intensity_variance, 'Intensity variance - ' + s, cmap_viridis, 
+                0.0, knn_max_variance, map_origin, save_folder=save_folder
+            )
+        else:
+            self.plot_map(
+                probability_map, 'Probability map - ' + s, cmap_binary, 
                 0.0, 1.0, map_origin, save_folder=save_folder
+            )
+            self.plot_map(
+                unfiltered_map, 'Non-interpolated intensity map - ' + s, cmap_copper, 
+                0.6, 1.4, map_origin, save_folder=save_folder
             )
 
     
@@ -232,11 +244,11 @@ class MapNode(Node):
 
         for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
             v = map_origin[0] - i * self.map_resolution.value
-            x_labels.append(('%.2f' % v) + ' m')
+            x_labels.append('$' + ('%.2f' % v) + ' m$')
             x_locations.append(i)
         for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
             v = map_origin[1] + i * self.map_resolution.value
-            y_labels.append(('%.2f' % v) + ' m')
+            y_labels.append('$' + ('%.2f' % v) + ' m$')
             y_locations.append(i)
 
         plt.yticks(x_locations, x_labels)
@@ -245,6 +257,9 @@ class MapNode(Node):
         plt.xlabel('East')
 
         plt.grid(visible=True)
+
+        if cmap != matplotlib.cm.copper:
+            plt.colorbar()
 
         if save_folder != None:
             plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')

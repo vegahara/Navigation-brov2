@@ -24,7 +24,7 @@ always_false(i::Int) = false
 const four_nn = [SVector{2,Int}(-1, 0), SVector{2,Int}(1, 0), SVector{2,Int}(0, -1), SVector{2,Int}(0, 1)]
 
 function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, map_origin_y, 
-                      swaths, sonar_range, swath_ground_resolution, probability_threshold, knn_k, method)
+                      swaths, sonar_range, swath_ground_resolution, probability_threshold, knn_k, method, knn_max_variance)
     
     to = TimerOutput()
 
@@ -64,7 +64,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     if method == "optimized"
 
         knn_max_dist = 0.2
-        knn_max_variance = 0.05
 
         probability_map = ones(n_rows, n_colums)
         #probability_map = NaN
@@ -99,7 +98,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         cells_to_filter = fill(false, (n_rows, n_colums))
         cells_to_visit = CircularDeque{SVector{2,Int}}(Int((20*2*sonar_range)/map_resolution))
 
-        @timeit to "map_generation_opt" generate_map_optimized!(
+        unfiltered_map = @timeit to "map_generation_opt" generate_map_optimized!(
             n_rows, n_colums, n_bins, map_resolution, 
             map_origin, swath_locals, sonar_range, probability_threshold,
             sonar_beta, swath_slant_resolution,
@@ -113,7 +112,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     elseif method == "original"
 
         knn_max_dist = 0.2
-        knn_max_variance = 0.05
 
         probability_map = ones(n_rows, n_colums)
         intensity_map = fill(NaN, (n_rows, n_colums))
@@ -139,7 +137,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
 
         cell_local = Array{SVector{2,Float64}}(undef, 2, 2)
 
-        @timeit to "map_generation_org" generate_map_original!(
+        unfiltered_map = @timeit to "map_generation_org" generate_map_original!(
             n_rows, n_colums, n_bins, map_resolution, 
             map_origin, swath_locals, sonar_range, probability_threshold,
             sonar_beta, swath_ground_resolution,
@@ -153,7 +151,6 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     elseif method == "knn"
 
         knn_max_dist = 0.3
-        knn_max_variance = 0.05
 
         intensity_map = fill(NaN, (n_rows, n_colums))
         intensity_variance = fill(NaN,n_rows,n_colums)
@@ -169,6 +166,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
             n_rows, n_colums, n_bins, map_resolution, 
             map_origin, swath_ground_resolution, knn_k, knn_max_dist, knn_max_variance,
             swath_locals, intensity_map, intensity_variance, bin_coordinates, intensity_values, to)
+
+        unfiltered_map = NaN
     end
 
     #show(to)
@@ -181,7 +180,7 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.3, 0.7)
     # echo_intensity_map = bilateral_filter(echo_intensity_map, 0.5, 0.9)
 
-    return intensity_map, probability_map, intensity_variance, range_map
+    return intensity_map, probability_map, intensity_variance, unfiltered_map
 end
  
 
@@ -354,11 +353,15 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
             range_map[row, colum] = Statistics.mean(view(ranges[row, colum], 1:indexes[row,colum]))
         end
     end
+    
+    unfiltered_map = deepcopy(intensity_map)
 
     @timeit to "map_interpolation" knn_filtering!(
             n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
             intensity_map, intensity_variance, cell_coordinates, intensity_values, cells_to_filter
-        )         
+        )   
+    
+    return unfiltered_map
 end
 
 
@@ -546,10 +549,14 @@ function generate_map_original!(
         end
     end
 
+    unfiltered_map = deepcopy(intensity_map)
+
     @timeit to "map_interpolation" knn_filtering!(
             n_rows, n_colums, map_resolution, knn_k, knn_max_dist, knn_max_variance,
             intensity_map, intensity_variance, cell_coordinates, intensity_values, cells_to_filter
         )
+
+    return unfiltered_map
     
 end
 
