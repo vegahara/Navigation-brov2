@@ -8,6 +8,7 @@ from rclpy.node import Node
 
 import numpy as np
 import cv2 as cv
+import matplotlib
 import matplotlib.pyplot as plt
 from adjustText import adjust_text
 from scipy.spatial.transform import Rotation as R
@@ -40,10 +41,10 @@ class LandmarkDetector(Node):
                         ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001),
-                        ('min_shadow_area', 0.1),
+                        ('min_shadow_area', 0.5),
                         ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.3),
-                        ('min_landmark_height', 0.3)]
+                        ('min_landmark_height', 0.2)]
         )
                       
         (processed_swath_topic, 
@@ -102,8 +103,13 @@ class LandmarkDetector(Node):
         self.landmarks = []
         self.processed_swaths = []
         self.map_full = None
-        self.fig = plt.figure(figsize=(12, 6))
         self.n_timesteps = 0
+
+        self.fig1 = None
+        self.fig2 = None
+        self.fig3 = None
+        self.fig4 = None
+        self.fig5 = None
 
         self.timer = self.create_timer(
             processing_period.value, self.landmark_detection
@@ -141,6 +147,7 @@ class LandmarkDetector(Node):
 
 
     def swath_array_callback(self, msg):
+
         for m in msg.swaths:
             r = R.from_quat([
                 m.odom.pose.pose.orientation.x,
@@ -293,11 +300,18 @@ class LandmarkDetector(Node):
         return bins[best_thresh_ind+1]
 
     def landmark_detection(self):
-
+        
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
-                
-        swaths = self.swath_buffer
+        
+        print(len(self.swath_buffer))
+
+        low_threshold = 0.95
+        low_threshold_structuring_element_size = 3
+        high_threshold = 0.97
+        high_threshold_structuring_element_size = 3
+
+        swaths = self.swath_buffer[:self.swaths_per_map.value]
         self.processed_swaths.extend(copy.deepcopy(swaths))
         
         self.swath_buffer = self.swath_buffer[self.swaths_per_map.value//2:]
@@ -305,35 +319,39 @@ class LandmarkDetector(Node):
         map_origin_x, map_origin_y, n_rows, n_colums = \
             self.find_map_origin_and_size(swaths)
                       
-        echo_map, prob_map, observed_swaths_map, range_map = generate_map(
+        intensity_map, prob_map, observed_swaths_map, range_map = generate_map(
             n_rows, n_colums, self.sonar.n_bins, 
             self.map_resolution.value, map_origin_x, map_origin_y, 
             swaths, self.sonar.range,
             self.swath_ground_range_resolution.value
         )
      
-        echo_map = np.asarray(echo_map, dtype=np.float64)
+        intensity_map = np.asarray(intensity_map, dtype=np.float64)
 
         map = Map(n_rows,n_colums,self.map_resolution.value)
-        map.intensity_map = echo_map
+        map.intensity_map = intensity_map
         map.origin = [map_origin_x, map_origin_y]
 
         self.extend_map(map)
 
         new_landmarks = []
 
-        threshold = 0.95
+        # Low threshold filtering
 
-        _retval, landmark_candidates_filter = \
-            cv.threshold(echo_map, threshold, 1.0, cv.THRESH_BINARY_INV)
-        landmark_candidates_filter = landmark_candidates_filter.astype(np.uint8)
+        _retval, landmark_cand_low_thres_im = \
+            cv.threshold(intensity_map, low_threshold, 1.0, cv.THRESH_BINARY_INV)
+        landmark_cand_low_thres_im = landmark_cand_low_thres_im.astype(np.uint8)
 
-        str_el = cv.getStructuringElement(cv.MORPH_RECT, (3,3)) 
-        landmark_candidates_filter = cv.morphologyEx(landmark_candidates_filter, cv.MORPH_OPEN, str_el)
-        landmark_candidates_filter = cv.morphologyEx(landmark_candidates_filter, cv.MORPH_CLOSE, str_el)
+        str_el = cv.getStructuringElement(
+            cv.MORPH_RECT, 
+            (low_threshold_structuring_element_size,
+             low_threshold_structuring_element_size)
+        ) 
+        landmark_cand_low_thres_im = cv.morphologyEx(landmark_cand_low_thres_im, cv.MORPH_OPEN, str_el)
+        landmark_cand_low_thres_im = cv.morphologyEx(landmark_cand_low_thres_im, cv.MORPH_CLOSE, str_el)
 
-        contours, _ = cv.findContours(landmark_candidates_filter, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-        filter = np.zeros(landmark_candidates_filter.shape[:2], dtype=landmark_candidates_filter.dtype)
+        contours, _ = cv.findContours(landmark_cand_low_thres_im, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+        filter = np.zeros(landmark_cand_low_thres_im.shape[:2], dtype=landmark_cand_low_thres_im.dtype)
 
         for cnt in contours:
 
@@ -348,22 +366,37 @@ class LandmarkDetector(Node):
 
             cv.drawContours(filter, [cnt], 0, (255), -1)
 
-        threshold = 0.98
-        #threshold = self.get_otsu_threshold(echo_map, 4096)
-        #print(threshold)
+        landmark_low_thres_im = cv.bitwise_and(
+            landmark_cand_low_thres_im, landmark_cand_low_thres_im, mask = filter
+        )
 
-        _retval, landmark_candidates = \
-            cv.threshold(echo_map, threshold, 1.0, cv.THRESH_BINARY_INV)
-        landmark_candidates = landmark_candidates.astype(np.uint8)
+        # High threshold filtering
 
-        str_el = cv.getStructuringElement(cv.MORPH_RECT, (7,7)) 
-        landmark_candidates = cv.morphologyEx(landmark_candidates, cv.MORPH_OPEN, str_el)
-        landmark_candidates = cv.morphologyEx(landmark_candidates, cv.MORPH_CLOSE, str_el)
+        _retval, landmark_cand_high_thres_im = \
+            cv.threshold(intensity_map, high_threshold, 1.0, cv.THRESH_BINARY_INV)
+        landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.uint8)
 
-        landmark_candidates_all = landmark_candidates
+        str_el = cv.getStructuringElement(
+            cv.MORPH_RECT, 
+            (high_threshold_structuring_element_size, 
+             high_threshold_structuring_element_size)
+        ) 
+        landmark_cand_high_thres_im = cv.morphologyEx(landmark_cand_high_thres_im, cv.MORPH_OPEN, str_el)
+        landmark_cand_high_thres_im = cv.morphologyEx(landmark_cand_high_thres_im, cv.MORPH_CLOSE, str_el)
 
-        contours, _ = cv.findContours(landmark_candidates, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-        mask = np.zeros(landmark_candidates.shape[:2], dtype=landmark_candidates.dtype)
+        contours, _ = cv.findContours(landmark_cand_high_thres_im, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+        mask_geom_filtering = np.zeros(
+            landmark_cand_high_thres_im.shape[:2], 
+            dtype=landmark_cand_high_thres_im.dtype
+        )
+        mask_high_low_thres_filtering = np.zeros(
+            landmark_cand_high_thres_im.shape[:2], 
+            dtype=landmark_cand_high_thres_im.dtype
+        )
+        mask_height_filtering = np.zeros(
+            landmark_cand_high_thres_im.shape[:2], 
+            dtype=landmark_cand_high_thres_im.dtype
+        )
         
         for cnt in contours:
 
@@ -376,6 +409,8 @@ class LandmarkDetector(Node):
                fill_rate < self.min_shadow_fill_rate.value:
                 continue
 
+            cv.drawContours(mask_geom_filtering, [cnt], 0, (255), -1)
+
             min_ground_range = self.sonar.range
             max_ground_range = 0.0
             
@@ -383,8 +418,8 @@ class LandmarkDetector(Node):
             observed_swaths = []
 
             temp_im = np.zeros(
-                landmark_candidates.shape[:2], 
-                dtype=landmark_candidates.dtype
+                landmark_cand_high_thres_im.shape[:2], 
+                dtype=landmark_cand_high_thres_im.dtype
             )
             cv.drawContours(temp_im, [cnt], 0, (255), -1)
 
@@ -410,12 +445,15 @@ class LandmarkDetector(Node):
             if len(observed_swaths) == 0:
                 continue
 
+            cv.drawContours(mask_high_low_thres_filtering, [cnt], 0, (255), -1)
+
             observed_swaths.sort()
             center_swath_idx = observed_swaths[int(len(observed_swaths) // 2)]
 
             for col in range(x,x+w):
                 for row in range(y,y+h):
-                    if not (center_swath_idx in observed_swaths_map[row][col]):
+                    if (not (center_swath_idx in observed_swaths_map[row][col])) or \
+                       (not temp_im[row][col]):
                         continue
 
                     cell_range = range_map[row][col]
@@ -426,6 +464,7 @@ class LandmarkDetector(Node):
                 
                     if cell_range > max_ground_range:
                         max_ground_range = cell_range
+
 
             altitude = swaths[center_swath_idx].altitude
 
@@ -488,7 +527,20 @@ class LandmarkDetector(Node):
 
             new_landmarks.append(self.landmarks[-1])
 
-            cv.drawContours(mask, [cnt], 0, (255), -1)
+            cv.drawContours(mask_height_filtering, [cnt], 0, (255), -1)
+
+
+        landmark_high_thres_im = cv.bitwise_and(
+            landmark_cand_high_thres_im,landmark_cand_high_thres_im, mask = mask_geom_filtering
+        )
+
+        landmark_no_height_filtered_im = cv.bitwise_and(
+            landmark_high_thres_im,landmark_high_thres_im, mask = mask_high_low_thres_filtering
+        )
+
+        landmark_im = cv.bitwise_and(
+            landmark_no_height_filtered_im,landmark_no_height_filtered_im, mask = mask_height_filtering
+        )
 
         # Save for offline SLAM
 
@@ -500,65 +552,158 @@ class LandmarkDetector(Node):
         #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # Plotting
-        plt.rcParams['font.family'] = 'sans-serif'
-        plt.rcParams['font.sans-serif'] = 'Bitstream Vera Sans'
+        plt.rcParams['text.usetex'] = True
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.sans-serif'] = 'Charter'
         plt.rcParams['font.size'] = 12
+        plt.rcParams['figure.constrained_layout.use'] = True
         plt.rcParams['image.aspect'] = 'equal'
 
-        landmark_candidates = cv.bitwise_and(
-            landmark_candidates,landmark_candidates, mask = mask
+        tick_distance = 20.0
+        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/'
+
+        landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
+        landmark_cand_low_thres_im = landmark_cand_low_thres_im.astype(np.float64)
+        landmark_high_thres_im = landmark_high_thres_im.astype(np.float64)
+        landmark_low_thres_im = landmark_low_thres_im.astype(np.float64)
+        landmark_no_height_filtered_im = landmark_no_height_filtered_im.astype(np.float64)
+        landmark_im = landmark_im.astype(np.float64)
+
+        landmark_cand_high_thres_im[landmark_cand_high_thres_im == 0.0] = np.nan
+        landmark_cand_low_thres_im[landmark_cand_low_thres_im == 0.0] = np.nan
+        landmark_high_thres_im[landmark_high_thres_im == 0.0] = np.nan
+        landmark_low_thres_im[landmark_low_thres_im == 0.0] = np.nan
+        landmark_no_height_filtered_im[landmark_no_height_filtered_im == 0.0] = np.nan
+        landmark_im[landmark_im == 0.0] = np.nan
+
+        map_origin = [map_origin_x, map_origin_y]
+        
+        self.n_timesteps += 1
+
+        self.plot_landmarks(map.intensity_map, new_landmarks, landmark_cand_high_thres_im, 
+                            landmark_cand_low_thres_im, landmark_high_thres_im,
+                            landmark_low_thres_im, landmark_no_height_filtered_im, landmark_im,
+                            swaths, map_origin, tick_distance, save_folder)
+
+
+    def plot_landmarks(self, map, landmarks, landmark_cand_high_thres_im, 
+                       landmark_cand_low_thres_im, landmark_high_thres_im,
+                       landmark_low_thres_im, landmark_no_height_filtered_im,
+                       landmark_im, swaths, map_origin,
+                       tick_distance, save_folder=None):
+        
+        vmin = 0.6
+        vmax = 1.4
+        
+        cmap_copper = matplotlib.cm.copper
+        cmap_copper.set_bad('w', 1.)
+        cmap_summer = matplotlib.cm.summer
+        cmap_spring = matplotlib.cm.spring
+
+        self.fig1 = self.plot_map_and_landmarks(
+            self.fig1, map, cmap_copper,
+            [landmark_cand_low_thres_im, landmark_low_thres_im],
+            [cmap_summer, cmap_spring],
+            [], swaths, 'x' + str(self.n_timesteps) + ' - geometric filtering low threshold',
+            vmin, vmax, map_origin, tick_distance, save_folder
         )
-        landmark_candidates = landmark_candidates.astype(np.float64)
-        landmark_candidates[landmark_candidates == 0.0] = np.nan
-        landmark_candidates_all = landmark_candidates_all.astype(np.float64)
-        landmark_candidates_all[landmark_candidates_all == 0.0] = np.nan
 
-        if self.fig == None:
-            self.fig = plt.figure(figsize=(12, 6))
+        self.fig2 = self.plot_map_and_landmarks(
+            self.fig2, map, cmap_copper,
+            [landmark_cand_high_thres_im, landmark_high_thres_im],
+            [cmap_summer, cmap_spring],
+            [], swaths, 'x' + str(self.n_timesteps) + ' - geometric filtering high threshold',
+            vmin, vmax, map_origin, tick_distance, save_folder
+        )
+
+        self.fig3 = self.plot_map_and_landmarks(
+            self.fig3, map, cmap_copper,
+            [landmark_high_thres_im, landmark_low_thres_im],
+            [cmap_summer, cmap_spring],
+            [], swaths, 'x' + str(self.n_timesteps) + ' - low and high threshold filtering',
+            vmin, vmax, map_origin, tick_distance, save_folder
+        )
+
+        self.fig4 = self.plot_map_and_landmarks(
+            self.fig4, map, cmap_copper,
+            [landmark_no_height_filtered_im, landmark_im],
+            [cmap_summer, cmap_spring],
+            landmarks, swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
+            vmin, vmax, map_origin, tick_distance, save_folder
+        )
+
+        self.fig5 = self.plot_map_and_landmarks(
+            self.fig5, self.map_full.intensity_map, cmap_copper,
+            [],[], self.landmarks, self.processed_swaths,
+            'x' + str(self.n_timesteps) + ' - all landmarks',
+            vmin, vmax, self.map_full.origin, tick_distance, save_folder, False
+        )
+
+        #plt.draw()
+        #plt.pause(0.5)
+
+    def plot_map_and_landmarks(self, fig, map, map_cmap, map_layer_lst, cmap_lst, 
+                               landmarks, swaths, title, vmin, vmax, 
+                               map_origin, tick_distanse=20,  save_folder=None, 
+                               plot_text = True):
+        
+        if fig == None or save_folder != None:
+            fig = plt.figure(title)
         else:
-            plt.clf()
+            fig.clf()
 
-        self.ax1 = self.fig.add_subplot(1, 2, 1)
-        self.ax2 = self.fig.add_subplot(1, 2, 2)
+        ax1 = fig.add_subplot(111)
 
-        self.ax1.imshow(self.map_full.intensity_map, cmap='copper', vmin=0.6, vmax=1.4)
-        self.ax2.imshow(echo_map, cmap='copper', vmin=0.6, vmax=1.4)
-        self.ax2.imshow(landmark_candidates_all, cmap='summer')
-        self.ax2.imshow(landmark_candidates, cmap='spring')
+        ax1.imshow(map, cmap=map_cmap, vmin=vmin, vmax=vmax)
 
-        for landmark in self.landmarks:
-            self.ax1.scatter(
-                (landmark.y - self.map_full.origin[1]) / self.map_full.resolution,
-                -(landmark.x - self.map_full.origin[0]) / self.map_full.resolution,
-                marker='x', c='k'
-            )
+        for landmark_layer, cmap in zip(map_layer_lst, cmap_lst):
+            ax1.imshow(landmark_layer, cmap)
+
+        n_rows, n_colums = map.shape
+
+        x_labels = []
+        x_locations = []
+        y_labels = []
+        y_locations = []
+
+        x_tick_start = int((map_origin[0] % tick_distanse) / self.map_resolution.value)
+        y_tick_start = int((tick_distanse - map_origin[1] % tick_distanse) / self.map_resolution.value)
+
+        for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin[0] - i * self.map_resolution.value
+            x_labels.append('$' + ('%.2f' % v) + ' m$')
+            x_locations.append(i)
+        for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
+            v = map_origin[1] + i * self.map_resolution.value
+            y_labels.append('$' + ('%.2f' % v) + ' m$')
+            y_locations.append(i)
+
+        ax1.set_yticks(x_locations, x_labels)
+        ax1.set_xticks(y_locations, y_labels)
+        ax1.set_ylabel('North')
+        ax1.set_xlabel('East')
+
         texts = []
 
-        for landmark in new_landmarks:
-            self.ax2.scatter(
-                (landmark.y - map_origin_y) / self.map_resolution.value,
-                -(landmark.x - map_origin_x) / self.map_resolution.value,
+        for landmark in landmarks:
+            ax1.scatter(
+                (landmark.y - map_origin[1]) / self.map_resolution.value,
+                -(landmark.x - map_origin[0]) / self.map_resolution.value,
                 marker='x', c='k'
             )
-            texts.append(self.ax2.text(
-                x=(landmark.y - map_origin_y) / self.map_resolution.value,
-                y=-(landmark.x - map_origin_x) / self.map_resolution.value,
-                s=f"$h = {landmark.height:.2f} m$\n$A = {landmark.area:.2f} m^2$\n$fr = {landmark.fill_rate:.2f}$"
-            ))
 
-        for swath in self.processed_swaths:
-            self.ax1.scatter(
-                (swath.odom[1] - self.map_full.origin[1]) / self.map_full.resolution, 
-                -(swath.odom[0] - self.map_full.origin[0]) / self.map_full.resolution,
-                c='k', 
-                edgecolor='none',
-                marker='.',
-            )
+            if plot_text:
+                texts.append(ax1.text(
+                    x=(landmark.y - map_origin[1]) / self.map_resolution.value,
+                    y=-(landmark.x - map_origin[0]) / self.map_resolution.value,
+                    s= '$h = ' +  ('%.2f' % landmark.height) + ' m$ \n $A = ' + ('%.2f' % landmark.area) + ' m^2$ \n' + r'$\rho_{fr} = ' + ('%.2f' % landmark.fill_rate) + '$'
+                ))
+
         for swath in swaths:
-            self.ax2.scatter(
-                (swath.odom[1] - map_origin_y) / self.map_resolution.value, 
-                -(swath.odom[0] - map_origin_x) / self.map_resolution.value,
-                c='k', 
+            ax1.scatter(
+                (swath.odom[1] - map_origin[1]) / self.map_resolution.value, 
+                -(swath.odom[0] - map_origin[0]) / self.map_resolution.value,
+                c='grey', 
                 edgecolor='none',
                 marker='.',
             )
@@ -566,38 +711,99 @@ class LandmarkDetector(Node):
         if len(texts) > 0:
             adjust_text(texts)
 
-        x_labels = []
-        x_locations = []
-        y_labels = []
-        y_locations = []
+        if save_folder != None:
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+            plt.close(fig)
+            return None
+            
+        return fig
 
-        tick_distanse = 20 # In meters
 
-        x_tick_start = int((map_origin_x % tick_distanse) / self.map_resolution.value)
-        y_tick_start = int((tick_distanse - map_origin_y % tick_distanse) / self.map_resolution.value)
+        # if self.fig == None:
+        #     self.fig = plt.figure(figsize=(12, 6))
+        # else:
+        #     plt.clf()
 
-        for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
-            v = map_origin_x - i * self.map_resolution.value
-            x_labels.append(('%.2f' % v) + ' m')
-            x_locations.append(i)
-        for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
-            v = map_origin_y + i * self.map_resolution.value
-            y_labels.append(('%.2f' % v) + ' m')
-            y_locations.append(i)
+        # self.ax1 = self.fig.add_subplot(1, 2, 1)
+        # self.ax2 = self.fig.add_subplot(1, 2, 2)
 
-        self.ax1.set_yticks(x_locations)
-        self.ax1.set_yticklabels(x_labels)
-        self.ax1.set_xticks(y_locations)
-        self.ax1.set_xticklabels(y_labels)
-        self.ax2.set_yticks(x_locations)
-        self.ax2.set_yticklabels(x_labels)
-        self.ax2.set_xticks(y_locations)
-        self.ax2.set_xticklabels(y_labels)
+        # self.ax1.imshow(self.map_full.intensity_map, cmap='copper', vmin=0.6, vmax=1.4)
+        # self.ax2.imshow(intensity_map, cmap='copper', vmin=0.6, vmax=1.4)
+        # self.ax2.imshow(landmark_cand_high_thres_im_all, cmap='summer')
+        # self.ax2.imshow(landmark_cand_high_thres_im, cmap='spring')
 
-        plt.draw()
-        plt.pause(0.005)
-        # self.n_timesteps += 1
-        # plt.savefig('/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/plt_x' + str(self.n_timesteps))
+        # for landmark in self.landmarks:
+        #     self.ax1.scatter(
+        #         (landmark.y - self.map_full.origin[1]) / self.map_full.resolution,
+        #         -(landmark.x - self.map_full.origin[0]) / self.map_full.resolution,
+        #         marker='x', c='k'
+        #     )
+        # texts = []
+
+        # for landmark in new_landmarks:
+        #     self.ax2.scatter(
+        #         (landmark.y - map_origin_y) / self.map_resolution.value,
+        #         -(landmark.x - map_origin_x) / self.map_resolution.value,
+        #         marker='x', c='k'
+        #     )
+        #     texts.append(self.ax2.text(
+        #         x=(landmark.y - map_origin_y) / self.map_resolution.value,
+        #         y=-(landmark.x - map_origin_x) / self.map_resolution.value,
+        #         s=f"$h = {landmark.height:.2f} m$\n$A = {landmark.area:.2f} m^2$\n$fr = {landmark.fill_rate:.2f}$"
+        #     ))
+
+        # for swath in self.processed_swaths:
+        #     self.ax1.scatter(
+        #         (swath.odom[1] - self.map_full.origin[1]) / self.map_full.resolution, 
+        #         -(swath.odom[0] - self.map_full.origin[0]) / self.map_full.resolution,
+        #         c='k', 
+        #         edgecolor='none',
+        #         marker='.',
+        #     )
+        # for swath in swaths:
+        #     self.ax2.scatter(
+        #         (swath.odom[1] - map_origin_y) / self.map_resolution.value, 
+        #         -(swath.odom[0] - map_origin_x) / self.map_resolution.value,
+        #         c='k', 
+        #         edgecolor='none',
+        #         marker='.',
+        #     )
+
+        # if len(texts) > 0:
+        #     adjust_text(texts)
+
+        # x_labels = []
+        # x_locations = []
+        # y_labels = []
+        # y_locations = []
+
+        # tick_distanse = 20 # In meters
+
+        # x_tick_start = int((map_origin_x % tick_distanse) / self.map_resolution.value)
+        # y_tick_start = int((tick_distanse - map_origin_y % tick_distanse) / self.map_resolution.value)
+
+        # for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
+        #     v = map_origin_x - i * self.map_resolution.value
+        #     x_labels.append(('%.2f' % v) + ' m')
+        #     x_locations.append(i)
+        # for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
+        #     v = map_origin_y + i * self.map_resolution.value
+        #     y_labels.append(('%.2f' % v) + ' m')
+        #     y_locations.append(i)
+
+        # self.ax1.set_yticks(x_locations)
+        # self.ax1.set_yticklabels(x_labels)
+        # self.ax1.set_xticks(y_locations)
+        # self.ax1.set_xticklabels(y_labels)
+        # self.ax2.set_yticks(x_locations)
+        # self.ax2.set_yticklabels(x_labels)
+        # self.ax2.set_xticks(y_locations)
+        # self.ax2.set_xticklabels(y_labels)
+
+        # plt.draw()
+        # plt.pause(0.005)
+        # # self.n_timesteps += 1
+        # # plt.savefig('/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/plt_x' + str(self.n_timesteps))
         
-        # plt.show()
-        # input('Press any key to continue')
+        # # plt.show()
+        # # input('Press any key to continue')
