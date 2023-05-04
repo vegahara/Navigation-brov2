@@ -304,8 +304,6 @@ class LandmarkDetector(Node):
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
         
-        print(len(self.swath_buffer))
-
         low_threshold = 0.95
         low_threshold_structuring_element_size = 3
         high_threshold = 0.97
@@ -546,7 +544,7 @@ class LandmarkDetector(Node):
 
         # timestep = Timestep(swaths[0].odom, new_landmarks)
 
-        # filename = '/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/pose_and_landmarks_training_data.pickle'
+        # filename = '/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle'
 
         # with open(filename, "ab") as f:
         #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -683,8 +681,18 @@ class LandmarkDetector(Node):
         ax1.set_ylabel('North')
         ax1.set_xlabel('East')
 
-        texts = []
+        
 
+        for swath in swaths:
+            ax1.scatter(
+                (swath.odom[1] - map_origin[1]) / self.map_resolution.value, 
+                -(swath.odom[0] - map_origin[0]) / self.map_resolution.value,
+                c='grey', 
+                edgecolor='none',
+                marker='.',
+            )
+
+        texts = []
         for landmark in landmarks:
             ax1.scatter(
                 (landmark.y - map_origin[1]) / self.map_resolution.value,
@@ -699,15 +707,6 @@ class LandmarkDetector(Node):
                     s= '$h = ' +  ('%.2f' % landmark.height) + ' m$ \n $A = ' + ('%.2f' % landmark.area) + ' m^2$ \n' + r'$\rho_{fr} = ' + ('%.2f' % landmark.fill_rate) + '$'
                 ))
 
-        for swath in swaths:
-            ax1.scatter(
-                (swath.odom[1] - map_origin[1]) / self.map_resolution.value, 
-                -(swath.odom[0] - map_origin[0]) / self.map_resolution.value,
-                c='grey', 
-                edgecolor='none',
-                marker='.',
-            )
-
         if len(texts) > 0:
             adjust_text(texts)
 
@@ -717,93 +716,3 @@ class LandmarkDetector(Node):
             return None
             
         return fig
-
-
-        # if self.fig == None:
-        #     self.fig = plt.figure(figsize=(12, 6))
-        # else:
-        #     plt.clf()
-
-        # self.ax1 = self.fig.add_subplot(1, 2, 1)
-        # self.ax2 = self.fig.add_subplot(1, 2, 2)
-
-        # self.ax1.imshow(self.map_full.intensity_map, cmap='copper', vmin=0.6, vmax=1.4)
-        # self.ax2.imshow(intensity_map, cmap='copper', vmin=0.6, vmax=1.4)
-        # self.ax2.imshow(landmark_cand_high_thres_im_all, cmap='summer')
-        # self.ax2.imshow(landmark_cand_high_thres_im, cmap='spring')
-
-        # for landmark in self.landmarks:
-        #     self.ax1.scatter(
-        #         (landmark.y - self.map_full.origin[1]) / self.map_full.resolution,
-        #         -(landmark.x - self.map_full.origin[0]) / self.map_full.resolution,
-        #         marker='x', c='k'
-        #     )
-        # texts = []
-
-        # for landmark in new_landmarks:
-        #     self.ax2.scatter(
-        #         (landmark.y - map_origin_y) / self.map_resolution.value,
-        #         -(landmark.x - map_origin_x) / self.map_resolution.value,
-        #         marker='x', c='k'
-        #     )
-        #     texts.append(self.ax2.text(
-        #         x=(landmark.y - map_origin_y) / self.map_resolution.value,
-        #         y=-(landmark.x - map_origin_x) / self.map_resolution.value,
-        #         s=f"$h = {landmark.height:.2f} m$\n$A = {landmark.area:.2f} m^2$\n$fr = {landmark.fill_rate:.2f}$"
-        #     ))
-
-        # for swath in self.processed_swaths:
-        #     self.ax1.scatter(
-        #         (swath.odom[1] - self.map_full.origin[1]) / self.map_full.resolution, 
-        #         -(swath.odom[0] - self.map_full.origin[0]) / self.map_full.resolution,
-        #         c='k', 
-        #         edgecolor='none',
-        #         marker='.',
-        #     )
-        # for swath in swaths:
-        #     self.ax2.scatter(
-        #         (swath.odom[1] - map_origin_y) / self.map_resolution.value, 
-        #         -(swath.odom[0] - map_origin_x) / self.map_resolution.value,
-        #         c='k', 
-        #         edgecolor='none',
-        #         marker='.',
-        #     )
-
-        # if len(texts) > 0:
-        #     adjust_text(texts)
-
-        # x_labels = []
-        # x_locations = []
-        # y_labels = []
-        # y_locations = []
-
-        # tick_distanse = 20 # In meters
-
-        # x_tick_start = int((map_origin_x % tick_distanse) / self.map_resolution.value)
-        # y_tick_start = int((tick_distanse - map_origin_y % tick_distanse) / self.map_resolution.value)
-
-        # for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
-        #     v = map_origin_x - i * self.map_resolution.value
-        #     x_labels.append(('%.2f' % v) + ' m')
-        #     x_locations.append(i)
-        # for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
-        #     v = map_origin_y + i * self.map_resolution.value
-        #     y_labels.append(('%.2f' % v) + ' m')
-        #     y_locations.append(i)
-
-        # self.ax1.set_yticks(x_locations)
-        # self.ax1.set_yticklabels(x_labels)
-        # self.ax1.set_xticks(y_locations)
-        # self.ax1.set_xticklabels(y_labels)
-        # self.ax2.set_yticks(x_locations)
-        # self.ax2.set_yticklabels(x_labels)
-        # self.ax2.set_xticks(y_locations)
-        # self.ax2.set_xticklabels(y_labels)
-
-        # plt.draw()
-        # plt.pause(0.005)
-        # # self.n_timesteps += 1
-        # # plt.savefig('/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/plt_x' + str(self.n_timesteps))
-        
-        # # plt.show()
-        # # input('Press any key to continue')
