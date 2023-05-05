@@ -66,6 +66,7 @@ function plotSLAM2DPoses_mine( fg::AbstractDFG;
                           drawContour::Bool=true, levels::Int=1,
                           contour::Union{Nothing, Bool}=nothing,
                           line_width=1pt,
+                          point_size=1pt,
                           drawPoints::Bool=true,
                           pointsColor::AbstractString="gray30",
                           drawEllipse::Bool=false,
@@ -109,13 +110,19 @@ function plotSLAM2DPoses_mine( fg::AbstractDFG;
     psplt = Union{}
     #thm = manualColor === nothing ? Theme(line_width=1pt) : Theme(line_width=line_width, default_color=parse(Colorant, manualColor))
     font = "Helvetica"
+    color="black"
     thm = Gadfly.Theme(
         line_width=1pt,
         major_label_font=font,
+        major_label_color=color,
         minor_label_font=font,
+        minor_label_color=color,
         key_title_font=font,
+        key_title_color=color,
         key_label_font=font,
+        key_label_color=color,
         point_label_font=font,
+        point_label_color=color,
         major_label_font_size=12pt,
         minor_label_font_size=12pt
     )
@@ -132,6 +139,14 @@ function plotSLAM2DPoses_mine( fg::AbstractDFG;
         Coord.cartesian(fixed=true)
       )
     end
+    #draw points for each pose
+    p = Gadfly.plot(
+        Gadfly.layer(x=Xpp,y=Ypp, Geom.point, Theme(line_width=0pt, point_size=2pt)),
+        Coord.cartesian(fixed=true)
+      )
+    for l in p.layers
+        push!(psplt.layers, l)
+    end
     # return psplt
     drawTriads && RoMEPlotting.addXYLineLayers!(psplt, Xpp, Ypp, Thpp, l=dyadScale, manualColor=manualColor)
     if drawhist
@@ -147,10 +162,10 @@ function plotSLAM2DPoses_mine( fg::AbstractDFG;
       end
     end
     # drawEllipse
-    # for vsym in variableList
-    #   pln = plotCovEllipseLayer(fg, vsym, solveKey=solveKey, drawEllipse=drawEllipse,drawPoints=drawPoints,ellipseColor=ellipseColor,pointsColor=pointsColor)
-    #   union!(psplt.layers, pln)
-    # end
+    for vsym in variableList
+      pln = plotCovEllipseLayer(fg, vsym, solveKey=solveKey, drawEllipse=drawEllipse,drawPoints=drawPoints,ellipseColor=ellipseColor,pointsColor=pointsColor)
+      union!(psplt.layers, pln)
+    end
     return psplt
 end
 
@@ -250,10 +265,10 @@ function plotSLAM2DLandmarks_mine( fg::AbstractDFG;
     end
 
     # if drawEllipse
-    # for vsym in variableList
-    #   pln = plotCovEllipseLayer(fg, vsym, solveKey=solveKey, drawEllipse=drawEllipse,drawPoints=drawPoints,ellipseColor=ellipseColor,pointsColor=pointsColor)
-    #   union!(psplt.layers, pln)
-    # end
+    for vsym in variableList
+      pln = plotCovEllipseLayer(fg, vsym, solveKey=solveKey, drawEllipse=drawEllipse,drawPoints=drawPoints,ellipseColor=ellipseColor,pointsColor=pointsColor)
+      union!(psplt.layers, pln)
+    end
 
     psplt
 end
@@ -278,7 +293,7 @@ function plotSLAM2D_mine(fgl::AbstractDFG;
                     xmin=nothing, xmax=nothing, ymin=nothing, ymax=nothing,
                     showmm=true,
                     window::Union{Nothing, Tuple{Symbol, Real}}=nothing,
-                    point_size=4pt,
+                    point_size=3pt,
                     line_width=1pt,
                     regexLandmark=r"l\d+",
                     regexPoses=r"x\d+",
@@ -291,66 +306,64 @@ function plotSLAM2D_mine(fgl::AbstractDFG;
                     ellipseColor::AbstractString="gray30",
                     title::AbstractString="",
                     aspect_ratio::Real=1  ) where T
-  #
 
-  #
-  xmin !== nothing && xmax !== nothing && xmin == xmax ? error("xmin must be less than xmax") : nothing
-  ymin !== nothing && ymax !== nothing && ymin == ymax ? error("ymin must be less than ymax") : nothing
-  
-  p = plotSLAM2DPoses_mine(fgl;
-                      solveKey,
-                      from,
-                      to,
-                      regexPoses,
-                      variableList=intersect(variableList, listVariablesLabelsWithinRange(fgl, regexPoses; from, to)),
-                      ppe=posesPPE,
-                      lbls,
-                      scale,
-                      x_off,
-                      y_off,
-                      drawhist,
-                      dyadScale,
-                      drawContour,
-                      drawTriads,
-                      manualColor,
-                      line_width,
-                      drawPoints,
-                      ellipseColor,
-                      pointsColor,
-                      drawEllipse,
-                      recalcPPEs  )
-  #
+    xmin !== nothing && xmax !== nothing && xmin == xmax ? error("xmin must be less than xmax") : nothing
+    ymin !== nothing && ymax !== nothing && ymin == ymax ? error("ymin must be less than ymax") : nothing
+    
+    p = plotSLAM2DPoses_mine(fgl;
+                        solveKey,
+                        from,
+                        to,
+                        regexPoses,
+                        variableList=intersect(variableList, listVariablesLabelsWithinRange(fgl, regexPoses; from, to)),
+                        ppe=posesPPE,
+                        lbls,
+                        scale,
+                        x_off,
+                        y_off,
+                        drawhist,
+                        dyadScale,
+                        drawContour,
+                        drawTriads,
+                        manualColor,
+                        line_width,
+                        point_size,
+                        drawPoints,
+                        ellipseColor,
+                        pointsColor,
+                        drawEllipse,
+                        recalcPPEs  )
 
-  ll = listVariables(fgl, regexLandmark)
-  if length(ll) > 0
-    pl = plotSLAM2DLandmarks_mine( fgl;
-                              solveKey,
-                              from,
-                              to,
-                              regexLandmark,
-                              variableList=intersect(variableList, listVariablesLabelsWithinRange(fgl, regexLandmark; from, to)),
-                              ppe=landmsPPE,
-                              minnei,
-                              lbls,
-                              scale,
-                              x_off,
-                              y_off,
-                              drawhist,
-                              MM,
-                              showmm,
-                              point_size,
-                              drawContour,
-                              manualColor,
-                              drawPoints,
-                              ellipseColor,
-                              pointsColor,
-                              drawEllipse,
-                              recalcPPEs  )
-    #
+    ll = listVariables(fgl, regexLandmark)
+    if length(ll) > 0
+        pl = plotSLAM2DLandmarks_mine( fgl;
+                                solveKey,
+                                from,
+                                to,
+                                regexLandmark,
+                                variableList=intersect(variableList, listVariablesLabelsWithinRange(fgl, regexLandmark; from, to)),
+                                ppe=landmsPPE,
+                                minnei,
+                                lbls,
+                                scale,
+                                x_off,
+                                y_off,
+                                drawhist,
+                                MM,
+                                showmm,
+                                point_size,
+                                drawContour,
+                                manualColor,
+                                drawPoints,
+                                ellipseColor,
+                                pointsColor,
+                                drawEllipse,
+                                recalcPPEs  )
+        
 
-    for l in pl.layers
-      push!(p.layers, l)
-    end
+        for l in pl.layers
+        push!(p.layers, l)
+        end
   end
   if window !== nothing
     focusX = getPPE(fgl, window[1], solveKey).max # getKDEMax( getBelief(getVariable(fgl,window[1]),solveKey) )
@@ -447,12 +460,56 @@ function accumulateMarginalContours(fgl, order;
   return pl, PL
 end
 
+using PyCall
+
+py"""
+import pickle
+import sys
+sys.path.append('utility_functions')
+import utility_functions
+ 
+def load_pickle(filename):
+    with open(filename, 'rb') as f:
+        objects = []
+        while True:
+            try:
+                obj = pickle.load(f)
+                objects.append(obj)
+            except EOFError:
+                break
+    return objects
+"""
+
+load_pickle = py"load_pickle"
+
+filename = "/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle"
+
+timesteps = load_pickle(filename)
+
+
 for t in 1:37
+
+    x = []
+    y = []
+
+    for i in 1:t
+        append!(x, timesteps[i].pose[2])
+        append!(y, timesteps[i].pose[1])
+    end
+
+    p0 = Gadfly.plot(
+        Gadfly.layer(x=x,y=y,Geom.path(),Theme(default_color=parse(Colorant,"grey"))),
+        Coord.cartesian(fixed=true),
+      )
 
     fg = loadDFG("/home/repo/Navigation-brov2/images/slam/factor_graphs/fg_x$t") 
     p1 = plotSLAM2D_mine(fg, drawPoints=false, drawEllipse=false, drawContour=true, levels=1, drawTriads=false, dyadScale=1.0)
 
+    for l in p0.layers
+        push!(p1.layers, l)
+    end
+
     p1 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/2D_plot_x$t.pdf")
 
-    drawGraph(fg, show=false, filepath="/home/repo/Navigation-brov2/images/slam/dot_files/fg_x$t.dot")
+    # drawGraph(fg, show=false, filepath="/home/repo/Navigation-brov2/images/slam/dot_files/fg_x$t.dot")
 end
