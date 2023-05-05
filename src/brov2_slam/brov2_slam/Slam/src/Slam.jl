@@ -31,7 +31,7 @@ def load_pickle(filename):
 
 load_pickle = py"load_pickle"
 
-filename = "/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/pose_and_landmarks_training_data.pickle"
+filename = "/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle"
 
 timesteps = load_pickle(filename)
 
@@ -41,8 +41,8 @@ landmark_likelihood_treshold = 1e-5
 
 n_sample_points = 50    # Number of sample points for montecarlo simulation
 
-sigma_r = 0.5           # Variance for range measurements of landmarks
-sigma_b = 0.01          # Variance for bearing measurements of landmarks
+sigma_r = 1.0           # Variance for range measurements of landmarks
+sigma_b = 0.05          # Variance for bearing measurements of landmarks
 
 fg = initfg()
 
@@ -57,8 +57,11 @@ for (timestep, data) in enumerate(timesteps)
     if timestep == 1
         pp2 = PriorPose2(MvNormal(
             [data.pose[2]; data.pose[1]; rem2pi(-data.pose[5] + pi/2, RoundNearest)], 
+            # Matrix(Diagonal(
+            #     [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]].^2
+            # ))
             Matrix(Diagonal(
-                [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]].^2
+                [1.0; 1.0; 0.01].^2
             ))
         ))
 
@@ -108,6 +111,8 @@ for (timestep, data) in enumerate(timesteps)
         if count(>(1e-14),abs.(Σ_b - sΣ_b)) > 0
             throw(ErrorException("Transformed covariance matrix is not positive definite"))
         end
+
+        println(sΣ_b)
 
         p2 = Pose2Pose2(MvNormal(Δx_b, sΣ_b))
 
@@ -273,11 +278,14 @@ for (timestep, data) in enumerate(timesteps)
 
     solveTree!(fg)
 
-    p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
+    # p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
 
-    p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/2D_plot.pdf")
+    # p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/2D_plot.pdf")
+
+    saveDFG("/home/repo/Navigation-brov2/images/slam/factor_graphs/fg_x$(timestep)", fg)
 
 end
+
 
 # solveTree!(fg)
 
@@ -285,8 +293,8 @@ end
 
 # p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/full_training_200_swaths/2D_plot.pdf")
 
-p2 = drawGraph(fg)
+# p2 = drawGraph(fg)
     
-p2 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/graph_plot.pdf")
+# p2 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/graph_plot.pdf")
 
 end # module Slam
