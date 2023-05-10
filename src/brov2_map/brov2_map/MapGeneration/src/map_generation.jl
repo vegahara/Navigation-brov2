@@ -42,15 +42,17 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         swath.data_stb, 
         SVector(
             swath.odom[1] + (sonar_x_offset * cos(swath.odom[4])
-                        + (swath.altitude - sonar_z_offset 
-                        + sonar_x_offset * sin(swath.odom[4]))
-                        * sin(swath.odom[4])) 
-                        * cos(swath.odom[5]), # Pitch correction
+                          + (swath.altitude 
+                          - sonar_z_offset * cos(swath.odom[4]) 
+                          + sonar_x_offset * sin(swath.odom[4]))
+                          * tan(swath.odom[4])) 
+                          * cos(swath.odom[5]), # Pitch correction
             swath.odom[2] + (sonar_x_offset * cos(swath.odom[4])
-                        + (swath.altitude - sonar_z_offset
-                        + sonar_x_offset * sin(swath.odom[4])) 
-                        * sin(swath.odom[4])) 
-                        * sin(swath.odom[5]), # Pitch correction
+                          + (swath.altitude 
+                          - sonar_z_offset * cos(swath.odom[4]) 
+                          + sonar_x_offset * sin(swath.odom[4]))
+                          * tan(swath.odom[4])) 
+                          * sin(swath.odom[5]), # Pitch correction
             swath.odom[3],
             swath.odom[4],
             swath.odom[5]
@@ -190,21 +192,21 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
         # corr_altitude_port = ((swath.altitude - sonar_z_offset) * 
         #                        cos_roll * cos_pitch) + 
         #                        sonar_x_offset * sin_pitch +
-        #                        sonar_y_offset * sin_roll
+        #                        sonar_y_offset * sin_roll * cos_pitch
         # corr_altitude_stb = ((swath.altitude - sonar_z_offset) * 
         #                       cos_roll * cos_pitch) + 
         #                       sonar_x_offset * sin_pitch -
-        #                       sonar_y_offset * sin_roll
+        #                       sonar_y_offset * sin_roll * cos_pitch
 
         # For attitude corrected altitude
         corr_altitude_port = swath.altitude -  
                                 sonar_z_offset * cos_roll * cos_pitch + 
                                 sonar_x_offset * sin_pitch +
-                                sonar_y_offset * sin_roll
+                                sonar_y_offset * sin_roll * cos_pitch
         corr_altitude_stb = swath.altitude - 
                             sonar_z_offset * cos_roll * cos_pitch + 
                             sonar_x_offset * sin_pitch -
-                            sonar_y_offset * sin_roll
+                            sonar_y_offset * sin_roll * cos_pitch
 
         fbr_slant_range_port = corr_altitude_port / 
                                 sin(angle_fbr - swath.odom[3])
