@@ -156,11 +156,11 @@ class SwathProcessingNode(Node):
         corr_alt_port = altitude - \
                         self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
                         self.sonar.x_offset * np.sin(pitch) + \
-                        self.sonar.y_offset * np.sin(roll)
+                        self.sonar.y_offset * np.cos(pitch) * np.sin(roll)
         corr_alt_stb = altitude - \
                        self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
                        self.sonar.x_offset * np.sin(pitch) - \
-                       self.sonar.y_offset * np.sin(roll)
+                       self.sonar.y_offset * np.cos(pitch) * np.sin(roll)
         
         return corr_alt_port, corr_alt_stb
     
