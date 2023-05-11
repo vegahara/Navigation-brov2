@@ -37,7 +37,7 @@ timesteps = load_pickle(filename)
 
 # Threshold to determine which landmark hypotheses to assosiate. 
 #If no landmarks is above the threshold, a new landmark is created
-landmark_likelihood_treshold = 1e-5  
+landmark_likelihood_treshold = 1e-6  
 
 n_sample_points = 50    # Number of sample points for montecarlo simulation
 
