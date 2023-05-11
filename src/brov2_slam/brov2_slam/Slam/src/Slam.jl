@@ -58,7 +58,7 @@ for (timestep, data) in enumerate(timesteps)
         pp2 = PriorPose2(MvNormal(
             [data.pose[2]; data.pose[1]; rem2pi(-data.pose[5] + pi/2, RoundNearest)], 
             Matrix(Diagonal(
-                [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]].^2
+                [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]]
             ))
         ))
 
@@ -95,9 +95,9 @@ for (timestep, data) in enumerate(timesteps)
         Δx_b[3] = rem2pi(Δx_b[3], RoundNearest)
 
         Σ_w = Matrix(Diagonal([
-            data.pose[6][1]^2 - last_data.pose[6][1]^2,
-            data.pose[6][8]^2 - last_data.pose[6][8]^2,
-            data.pose[6][36]^2
+            data.pose[6][1] - last_data.pose[6][1],
+            data.pose[6][8] - last_data.pose[6][8],
+            data.pose[6][36]
         ]))
 
         Σ_b = T * Σ_w * T'
