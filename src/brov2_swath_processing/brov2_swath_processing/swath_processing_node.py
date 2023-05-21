@@ -365,10 +365,6 @@ class SwathProcessingNode(Node):
             t_odom * \
             (self.unprocessed_odoms[odom_new_index].pose.covariance - \
             self.unprocessed_odoms[odom_new_index - 1].pose.covariance)
-        
-        print(swath.odom.pose.covariance)
-        print(self.unprocessed_odoms[odom_new_index].pose.covariance)
-        print(self.unprocessed_odoms[odom_new_index-1].pose.covariance)
                                     
         # Remove old msgs
         self.unprocessed_odoms = self.unprocessed_odoms[odom_new_index-1:]
