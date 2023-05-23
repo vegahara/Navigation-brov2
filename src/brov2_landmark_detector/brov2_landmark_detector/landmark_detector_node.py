@@ -298,7 +298,7 @@ class LandmarkDetector(Node):
                 best_var = var
 
         return bins[best_thresh_ind+1]
-
+    
     def landmark_detection(self):
         
         if len(self.swath_buffer) < self.swaths_per_map.value:
@@ -466,6 +466,56 @@ class LandmarkDetector(Node):
 
             altitude = swaths[center_swath_idx].altitude
 
+            # if self.altitude_attitude_correction:
+            #     altitude = swath.altitude * np.cos(roll) * np.cos(pitch)
+            # else:
+            #     altitude = swath.altitude
+
+            roll = swaths[center_swath_idx].odom[2]
+            pitch = swaths[center_swath_idx].odom[3]
+            yaw = swaths[center_swath_idx].odom[4]
+
+            corr_alt_port = altitude - \
+                            self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
+                            self.sonar.x_offset * np.sin(pitch) + \
+                            self.sonar.y_offset * np.sin(roll) * np.cos(pitch)
+            corr_alt_stb = altitude - \
+                        self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
+                        self.sonar.x_offset * np.sin(pitch) - \
+                        self.sonar.y_offset * np.sin(roll) * np.cos(pitch)
+            
+            global_landmark_pos = [
+                map_origin_x - self.map_resolution.value * local_landmark_pos[1],
+                map_origin_y + self.map_resolution.value * local_landmark_pos[0] 
+            ]
+
+            x_pose = swaths[center_swath_idx].odom[0]
+            y_pose = swaths[center_swath_idx].odom[1]
+
+            v = [
+                global_landmark_pos[0] - x_pose,
+                global_landmark_pos[1] - y_pose
+            ]
+
+            horisontal_y_offset = self.sonar.y_offset * np.cos(roll) + \
+                self.sonar.z_offset * np.sin(roll)
+
+            theta = np.arctan2(v[1], v[0]) - yaw
+
+            if theta > np.pi:
+                altitude = corr_alt_port
+                v[0] -= horisontal_y_offset * np.cos(yaw - np.pi / 2)
+                v[1] -= horisontal_y_offset * np.sin(yaw - np.pi / 2)
+            else:
+                altitude = corr_alt_stb
+                v[0] -= horisontal_y_offset * np.cos(yaw + np.pi / 2)
+                v[1] -= horisontal_y_offset * np.sin(yaw + np.pi / 2)
+
+            v = [
+                v[0] / np.sqrt(v[0]**2 + v[1]**2),
+                v[1] / np.sqrt(v[0]**2 + v[1]**2),
+            ]
+
             min_slant_range = np.sqrt(min_ground_range**2 + altitude**2)
             max_slant_range = np.sqrt(max_ground_range**2 + altitude**2)
 
@@ -474,23 +524,8 @@ class LandmarkDetector(Node):
             if landmark_height < self.min_landmark_height.value:
                 continue
 
-            x_pose = swaths[center_swath_idx].odom[0]
-            y_pose = swaths[center_swath_idx].odom[1]
-
             actual_ground_range = np.sqrt(min_slant_range**2 - (altitude - landmark_height)**2)
-            global_landmark_pos = [
-                map_origin_x - self.map_resolution.value * local_landmark_pos[1],
-                map_origin_y + self.map_resolution.value * local_landmark_pos[0] 
-            ]
 
-            v = [
-                global_landmark_pos[0] - x_pose,
-                global_landmark_pos[1] - y_pose
-            ]
-            v = [
-                v[0] / np.sqrt(v[0]**2 + v[1]**2),
-                v[1] / np.sqrt(v[0]**2 + v[1]**2),
-            ]
 
             # Corrected position
             global_landmark_pos = [
@@ -704,7 +739,7 @@ class LandmarkDetector(Node):
                 texts.append(ax1.text(
                     x=(landmark.y - map_origin[1]) / self.map_resolution.value,
                     y=-(landmark.x - map_origin[0]) / self.map_resolution.value,
-                    s= '$h = ' +  ('%.2f' % landmark.height) + ' m$ \n $A = ' + ('%.2f' % landmark.area) + ' m^2$ \n' + r'$\rho_{fr} = ' + ('%.2f' % landmark.fill_rate) + '$'
+                    s= r'$h_l = ' +  ('%.2f' % landmark.height) + ' m$ \n' + '$A_l = ' + ('%.2f' % landmark.area) + ' m^2$ \n' + r'$\rho_{bb} = ' + ('%.2f' % landmark.fill_rate) + '$'
                 ))
 
         if len(texts) > 0:
