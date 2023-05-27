@@ -81,8 +81,8 @@ function generate_map(n_rows, n_colums, n_bins, map_resolution, map_origin_x, ma
         ranges = Array{Vector{Float64}}(undef, n_rows, n_colums) 
         indexes = zeros(Int, n_rows, n_colums)
 
-        buffer_size = Int(ceil(length(swath_locals)))
-        # buffer_size = Int(ceil(length(swath_locals) * 0.35))
+        # buffer_size = Int(ceil(length(swath_locals)))
+        buffer_size = Int(ceil(length(swath_locals) * 0.35))
         # buffer_size = 400
 
         for i=1:n_rows, j=1:n_colums

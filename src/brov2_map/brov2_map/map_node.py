@@ -38,7 +38,7 @@ class MapNode(Node):
                         ('sonar_transducer_alpha', pi/3),
                         ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 100),
+                        ('swaths_per_map', 500),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -150,12 +150,45 @@ class MapNode(Node):
         plt.rcParams['figure.constrained_layout.use'] = True
         plt.rcParams['image.aspect'] = 'equal'
 
+        # save_folder = '/home/repo/Navigation-brov2/images/map_generation/'
+        # methods = ['knn', 'knn', 'optimized', 'optimized', 'optimized', 'original']
+        # probability_thresholds = [0.1, 0.1, 0.1, 0.05, 0.1, 0.1]
+        # knn_ks = [4, 4, 2, 2, 2, 2]
+        # map_resolutions = [0.05, 0.1, 0.1, 0.1, 0.2, 0.1]
+        # knn_max_variance = 0.05
+
+        # # For example map generation. Remember to change to 1000 swaths and disable slant range corr. 
+        # save_folder = '/home/repo/Navigation-brov2/images/map_generation/map_example_'
+        # methods = ['optimized']
+        # probability_thresholds = [0.1]
+        # knn_ks = [2]
+        # map_resolutions = [0.1]
+        # knn_max_variance = 0.05
+
+        # # For knn Remember to change to 500 swaths and enable slant range corr. 
+        # save_folder = '/home/repo/Navigation-brov2/images/map_generation/'
+        # methods = ['knn', 'knn', 'knn']
+        # probability_thresholds = [0.1, 0.1, 0.1]
+        # knn_ks = [4, 4, 4]
+        # map_resolutions = [0.05, 0.1, 0.2]
+        # knn_max_variance = 0.05
+
+        # # For orginal. Remember to change to 500 swaths and enable slant range corr. 
+        # save_folder = '/home/repo/Navigation-brov2/images/map_generation/'
+        # methods = ['original']
+        # probability_thresholds = [0.1]
+        # knn_ks = [2]
+        # map_resolutions = [0.1]
+        # knn_max_variance = 0.05
+
+        # For optimized. Remember to change to 500 swaths and disable slant range corr. 
         save_folder = '/home/repo/Navigation-brov2/images/map_generation/'
-        methods = ['knn', 'knn', 'optimized', 'optimized', 'optimized', 'original']
-        probability_thresholds = [0.1, 0.1, 0.1, 0.05, 0.1, 0.1]
-        knn_ks = [4, 4, 2, 2, 2, 2]
-        map_resolutions = [0.05, 0.1, 0.1, 0.1, 0.2, 0.1]
+        methods = ['optimized']
+        probability_thresholds = [0.1]
+        knn_ks = [2]
+        map_resolutions = [0.1]
         knn_max_variance = 0.05
+
 
         for method, probability_threshold, knn_k, map_resolution in zip (methods, probability_thresholds, knn_ks, map_resolutions):
 
@@ -230,6 +263,11 @@ class MapNode(Node):
         
         fig = plt.figure(title)
 
+        t = 18
+
+        map = map[int(t / self.map_resolution.value):]
+        map_origin[0] -= t
+
         plt.imshow(map, cmap=cmap, vmin=vmin, vmax=vmax)
 
         n_rows, n_colums = map.shape
@@ -256,7 +294,7 @@ class MapNode(Node):
         plt.ylabel('North')
         plt.xlabel('East')
 
-        plt.grid(visible=True)
+        # plt.grid(visible=True)
 
         if cmap != matplotlib.cm.copper:
             plt.colorbar()
