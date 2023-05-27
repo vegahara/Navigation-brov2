@@ -523,7 +523,7 @@ class SwathProcessingNode(Node):
         self.swaths_slant_range_no_corr.append(deepcopy(swath_uncorrected))
 
         start_index = 0
-        end_index = 1500
+        end_index = 1000
         save_folder = '/home/repo/Navigation-brov2/images/swath_processing/'
         plt.rcParams['text.usetex'] = True
         plt.rcParams['font.family'] = 'serif'
@@ -574,6 +574,13 @@ class SwathProcessingNode(Node):
         self.plot_blind_zone_removal(
             self.swaths_raw,
             'Raw swaths - blind zone removal marked',
+            save_folder,
+            vmin=vmin_raw, vmax=vmax_raw
+        )
+
+        self.plot_blind_zone_removal_zoomed(
+            self.swaths_raw,
+            'Raw swaths - blind zone removal marked and zoomed',
             save_folder,
             vmin=vmin_raw, vmax=vmax_raw
         )
@@ -658,7 +665,7 @@ class SwathProcessingNode(Node):
         if labels == None:
             labels = ['$-1000$', '$-500$', '$0$', '$500$', '$1000$']
 
-        pos = [0.0, 500.0, 1000.0, 1500.0, 1999.0]
+        pos = [0.0, 499.0, 999.0, 1499.0, 1999.0]
         ax1.set_xticks(pos, labels)
 
         # Show distance traveled on right side
@@ -713,16 +720,134 @@ class SwathProcessingNode(Node):
 
         plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone')
         plt.plot(blind_zone_border_stb, y, c='g', linewidth=2)
-        plt.plot(blind_zone_border_no_corr_port, y, c='r', linewidth=2, label='Blind zone - no correction')
+        plt.plot(blind_zone_border_no_corr_port, y, c='r', linewidth=2, label='Blind zone no corr.')
         plt.plot(blind_zone_border_no_corr_stb, y, c='r', linewidth=2)
-        plt.plot(no_echo_port, y, c='c', linewidth=2, label='First possible echo return')
+        plt.plot(no_echo_port, y, c='c', linewidth=2, label='First possible echo')
         plt.plot(no_echo_stb, y, c='c', linewidth=2)
 
-        plt.legend()
+        # For zoomed in part
+        start_swath = 700
+        end_swath = 1000
+        n_bins = 300 # For one side
+
+        plt.hlines(
+            y=[start_swath, end_swath-2], 
+            xmin=self.sonar.n_bins - n_bins, 
+            xmax=self.sonar.n_bins + n_bins, 
+            linewidth=1, colors='black'
+        )
+
+        plt.vlines(
+            x=[self.sonar.n_bins - n_bins, self.sonar.n_bins + n_bins], 
+            ymin=start_swath, ymax=end_swath-2, 
+            linewidth=1, colors='black'
+        )
+
+        plt.legend(fancybox=True, shadow=True)
 
         if save_folder != None:
             plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
 
+
+    def plot_blind_zone_removal_zoomed(self, swaths, title:str, save_folder=None, vmin=0.6, vmax=1.4, labels=None, width=6):
+
+        start_swath = 700
+        end_swath = 1000
+        n_swaths = end_swath - start_swath
+        n_bins = 300 # For one side
+
+        swaths = swaths[start_swath:end_swath]
+
+        im_blind_zone = np.empty((n_swaths, n_bins * 2))
+        im_blind_zone[:] = np.nan 
+        im_blind_zone_no_corr = np.empty((n_swaths, n_bins * 2))
+        im_blind_zone_no_corr[:] = np.nan
+
+        blind_zone_border_port = np.empty(n_swaths, dtype=int)
+        blind_zone_border_stb = np.empty(n_swaths, dtype=int)
+        blind_zone_border_no_corr_port = np.empty(n_swaths, dtype=int)
+        blind_zone_border_no_corr_stb = np.empty(n_swaths, dtype=int)
+        no_echo_port = np.empty(n_swaths, dtype=int)
+        no_echo_stb = np.empty(n_swaths, dtype=int)
+
+        for i, swath in enumerate(swaths):
+            roll, pitch, _yaw = self.get_roll_pitch_yaw(swath)
+
+            bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, roll, pitch)
+            blind_zone_border_port[i] = n_bins - bin_fbr_port - 1
+            blind_zone_border_stb[i] = n_bins + bin_fbr_stb
+
+            bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, 0.0, 0.0)
+            blind_zone_border_no_corr_port[i] = n_bins - bin_fbr_port - 1
+            blind_zone_border_no_corr_stb[i] = n_bins + bin_fbr_stb
+
+            corr_alt_port, corr_alt_stb = self.get_corrected_sonar_altitude(swath, roll, pitch)
+            no_echo_port[i] = n_bins - int(corr_alt_port / self.sonar.slant_resolution) - 1
+            no_echo_stb[i] = n_bins + int(corr_alt_stb / self.sonar.slant_resolution)
+
+        swaths = self.swaths_raw
+
+        im = np.empty((n_swaths, n_bins * 2))
+
+        distance_traveled = []
+        current_dist = 0.0
+        old_x = swaths[0].odom.pose.pose.position.x
+        old_y = swaths[0].odom.pose.pose.position.y
+
+        for i, swath in enumerate(swaths):
+            delta_x = swath.odom.pose.pose.position.x - old_x
+            delta_y = swath.odom.pose.pose.position.y - old_y
+            delta_dist = np.sqrt(delta_x**2 + delta_y**2)
+            current_dist += delta_dist
+
+            distance_traveled.append(current_dist)
+            
+            old_x = swath.odom.pose.pose.position.x
+            old_y = swath.odom.pose.pose.position.y
+
+        distance_traveled = distance_traveled[start_swath:end_swath]
+      
+        swaths = swaths[start_swath:end_swath]
+
+        for i, swath in enumerate(swaths):
+            im[i][:] = np.concatenate((swath.data_port[self.sonar.n_bins - n_bins:], swath.data_stb[:n_bins]))
+
+        fig = plt.figure(title)
+
+        cmap_copper = matplotlib.cm.copper
+        cmap_copper.set_bad('w', 1.)
+
+        ax1 = fig.add_subplot(111)
+        ax1.imshow(im, cmap=cmap_copper, vmin=vmin , vmax=vmax)
+        ax1.set_xlabel('Across track [bin \#]')
+        ax1.set_ylabel('Along track [swath \#]')
+
+        if labels == None:
+            labels = ['$-300$', '$-150$', '$0$', '$150$', '$300$']
+
+        pos = [0.0, 149.0, 299.0, 449.0, 599.0]
+        ax1.set_xticks(pos, labels)
+
+        yticks_locs = ax1.get_yticks()
+        new_ytick_labels = ['$' + ('%d' % int(loc + start_swath)) + '$' for loc in yticks_locs]
+        ax1.set_yticklabels(new_ytick_labels)
+
+        # Show distance traveled on right side
+        ax2 = ax1.secondary_yaxis('right')
+        ax2.yaxis.set_major_formatter(DistanceTraveldFormatter(distance_traveled))
+        ax2.set_ylabel('Distance traveled')
+
+        y = range(0,len(swaths))
+
+        plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone')
+        plt.plot(blind_zone_border_stb, y, c='g', linewidth=2)
+        plt.plot(blind_zone_border_no_corr_port, y, c='r', linewidth=2, label='Blind zone no corr.')
+        plt.plot(blind_zone_border_no_corr_stb, y, c='r', linewidth=2)
+        plt.plot(no_echo_port, y, c='c', linewidth=2, label='First possible echo')
+        plt.plot(no_echo_stb, y, c='c', linewidth=2)
+
+        if save_folder != None:
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
 
 class DistanceTraveldFormatter(Formatter):
     def __init__(self, distance_traveled):
@@ -730,6 +855,6 @@ class DistanceTraveldFormatter(Formatter):
 
     def __call__(self, x, pos=0):
         try:
-            return '$' + ('%.2f' % self.distance_traveled[int(round(x))]) + ' m$'
+            return '$' + ('%.2f' % self.distance_traveled[int(round(x))]) + 'm$'
         except IndexError:
             pass
