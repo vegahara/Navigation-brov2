@@ -12,6 +12,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 from adjustText import adjust_text
 from scipy.spatial.transform import Rotation as R
+from scipy.optimize import curve_fit
+from scipy.ndimage.filters import gaussian_filter
 import copy
 import pickle
 
@@ -458,11 +460,11 @@ class LandmarkDetector(Node):
 
                     if cell_range < min_ground_range:
                         min_ground_range = cell_range
-                        local_landmark_pos = [col,row]
+                        local_landmark_pos_boulder = [col,row]
                 
                     if cell_range > max_ground_range:
                         max_ground_range = cell_range
-
+                        local_landmark_pos_hole = [col,row]
 
             altitude = swaths[center_swath_idx].altitude
 
@@ -483,55 +485,171 @@ class LandmarkDetector(Node):
                         self.sonar.z_offset * np.cos(roll) * np.cos(pitch) + \
                         self.sonar.x_offset * np.sin(pitch) - \
                         self.sonar.y_offset * np.sin(roll) * np.cos(pitch)
-            
-            global_landmark_pos = [
-                map_origin_x - self.map_resolution.value * local_landmark_pos[1],
-                map_origin_y + self.map_resolution.value * local_landmark_pos[0] 
-            ]
 
             x_pose = swaths[center_swath_idx].odom[0]
             y_pose = swaths[center_swath_idx].odom[1]
 
             v = [
-                global_landmark_pos[0] - x_pose,
-                global_landmark_pos[1] - y_pose
+                map_origin_x - self.map_resolution.value * local_landmark_pos_boulder[1] - x_pose,
+                map_origin_y + self.map_resolution.value * local_landmark_pos_boulder[0] - y_pose
             ]
-
-            horisontal_y_offset = self.sonar.y_offset * np.cos(roll) + \
-                self.sonar.z_offset * np.sin(roll)
 
             theta = np.arctan2(v[1], v[0]) - yaw
 
             if theta > np.pi:
                 altitude = corr_alt_port
-                v[0] -= horisontal_y_offset * np.cos(yaw - np.pi / 2)
-                v[1] -= horisontal_y_offset * np.sin(yaw - np.pi / 2)
+
             else:
                 altitude = corr_alt_stb
-                v[0] -= horisontal_y_offset * np.cos(yaw + np.pi / 2)
-                v[1] -= horisontal_y_offset * np.sin(yaw + np.pi / 2)
-
-            v = [
-                v[0] / np.sqrt(v[0]**2 + v[1]**2),
-                v[1] / np.sqrt(v[0]**2 + v[1]**2),
-            ]
 
             min_slant_range = np.sqrt(min_ground_range**2 + altitude**2)
             max_slant_range = np.sqrt(max_ground_range**2 + altitude**2)
 
-            landmark_height = altitude * (1 - min_slant_range / max_slant_range)
+            diff_slant_range = 0.8 * (max_ground_range - min_slant_range)
 
-            if landmark_height < self.min_landmark_height.value:
+            votes_hole = 0
+            votes_boulder = 0
+
+            for i in observed_swaths:
+                swath = swaths[i]
+                if theta > np.pi:
+                    y_data = swath.data_port[
+                        self.sonar.n_bins - int((max_slant_range + diff_slant_range)/self.sonar.slant_resolution):
+                        self.sonar.n_bins - int((min_slant_range - diff_slant_range)/self.sonar.slant_resolution)
+                    ]
+                    y_data = np.flip(y_data)
+                else:
+                    y_data = swath.data_stb[
+                        int((min_slant_range - diff_slant_range)/self.sonar.slant_resolution):
+                        int((max_slant_range + diff_slant_range)/self.sonar.slant_resolution)
+                    ]
+
+                y_data = gaussian_filter(y_data, 2.0)
+
+                x_data = np.arange(0, len(y_data))
+
+                p0 = [
+                    1.0,
+                    len(x_data) / 2,
+                    0.5,
+                    np.mean(y_data)
+                ]
+
+                try: 
+                    popt, pcov = curve_fit(
+                        gaussian_derivative,
+                        x_data,
+                        y_data,
+                        p0                    
+                    )
+                    if popt[0] < 0:
+                        votes_hole += 1
+                    else:
+                        votes_boulder += 1
+
+                except:
+                    print('Not able to estimate')
+
+                # plt.clf()
+                # plt.plot(x_data, y_data, 'b-', label='data')
+                # plt.plot(x_data, gaussian_derivative(x_data, *popt), 'g--')
+                # # plt.plot(x_data, gaussian_derivative(x_data, *p0))
+                # plt.draw()
+                # plt.pause(0.1)
+
+                # input('Press any key to continue')
+
+            print('votes_boulder: ', votes_boulder)
+            print('votes_hole: ', votes_hole)
+
+            if votes_boulder > votes_hole:
+
+                landmark_height = altitude * (1 - min_slant_range / max_slant_range)
+
+                if landmark_height < self.min_landmark_height.value:
+                    continue
+
+                actual_ground_range = np.sqrt(min_slant_range**2 - (altitude - landmark_height)**2)
+
+                global_landmark_pos = [
+                    map_origin_x - self.map_resolution.value * local_landmark_pos_boulder[1],
+                    map_origin_y + self.map_resolution.value * local_landmark_pos_boulder[0] 
+                ]
+
+                v = [
+                    global_landmark_pos[0] - x_pose,
+                    global_landmark_pos[1] - y_pose
+                ]
+
+                horisontal_y_offset = self.sonar.y_offset * np.cos(roll) + \
+                    self.sonar.z_offset * np.sin(roll)
+
+                if theta > np.pi:
+                    v[0] -= horisontal_y_offset * np.cos(yaw - np.pi / 2)
+                    v[1] -= horisontal_y_offset * np.sin(yaw - np.pi / 2)
+                else:
+                    v[0] -= horisontal_y_offset * np.cos(yaw + np.pi / 2)
+                    v[1] -= horisontal_y_offset * np.sin(yaw + np.pi / 2)
+
+                v = [
+                    v[0] / np.sqrt(v[0]**2 + v[1]**2),
+                    v[1] / np.sqrt(v[0]**2 + v[1]**2),
+                ]
+
+                # Corrected position
+                global_landmark_pos = [
+                    global_landmark_pos[0] + v[0] * abs(actual_ground_range - min_ground_range),
+                    global_landmark_pos[1] + v[1] * abs(actual_ground_range - min_ground_range)
+                ]
+            
+            elif votes_hole > votes_boulder:
+
+                landmark_height = -altitude * (max_slant_range / min_slant_range - 1)
+
+                if abs(landmark_height) < self.min_landmark_height.value:
+                    continue
+
+                actual_ground_range = np.sqrt(max_slant_range**2 - (altitude + landmark_height)**2)
+
+                global_landmark_pos = [
+                    map_origin_x - self.map_resolution.value * local_landmark_pos_hole[1],
+                    map_origin_y + self.map_resolution.value * local_landmark_pos_hole[0] 
+                ]
+
+                v = [
+                    global_landmark_pos[0] - x_pose,
+                    global_landmark_pos[1] - y_pose
+                ]
+
+                horisontal_y_offset = self.sonar.y_offset * np.cos(roll) + \
+                    self.sonar.z_offset * np.sin(roll)
+
+                if theta > np.pi:
+                    v[0] -= horisontal_y_offset * np.cos(yaw - np.pi / 2)
+                    v[1] -= horisontal_y_offset * np.sin(yaw - np.pi / 2)
+                else:
+                    v[0] -= horisontal_y_offset * np.cos(yaw + np.pi / 2)
+                    v[1] -= horisontal_y_offset * np.sin(yaw + np.pi / 2)
+
+                v = [
+                    v[0] / np.sqrt(v[0]**2 + v[1]**2),
+                    v[1] / np.sqrt(v[0]**2 + v[1]**2),
+                ]
+
+                # Corrected position
+                global_landmark_pos = [
+                    global_landmark_pos[0] - v[0] * abs(actual_ground_range - max_ground_range),
+                    global_landmark_pos[1] - v[1] * abs(actual_ground_range - max_ground_range)
+                ]
+
+            else:
                 continue
 
-            actual_ground_range = np.sqrt(min_slant_range**2 - (altitude - landmark_height)**2)
+            sigma_b = 5.0 * (self.map_resolution.value / actual_ground_range)
+            sigma_r = 0.3 * (max_ground_range - min_ground_range)
 
-
-            # Corrected position
-            global_landmark_pos = [
-                global_landmark_pos[0] + v[0] * abs(actual_ground_range - min_ground_range),
-                global_landmark_pos[1] + v[1] * abs(actual_ground_range - min_ground_range)
-            ]
+            print('sigma_b: ', sigma_b* (180 / np.pi))
+            print('sigma_r: ', sigma_r)
 
             landmark_pose_transformation = [
                 global_landmark_pos[0] - swaths[0].odom[0],
@@ -552,7 +670,9 @@ class LandmarkDetector(Node):
                 global_landmark_pos[0],
                 global_landmark_pos[1],
                 landmark_range,
+                sigma_r,
                 landmark_bearing,
+                sigma_b,
                 landmark_height,
                 area_shadow,
                 fill_rate
@@ -594,6 +714,7 @@ class LandmarkDetector(Node):
 
         tick_distance = 20.0
         save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/'
+
 
         landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
         landmark_cand_low_thres_im = landmark_cand_low_thres_im.astype(np.float64)
@@ -672,8 +793,8 @@ class LandmarkDetector(Node):
             vmin, vmax, self.map_full.origin, tick_distance, save_folder, False
         )
 
-        #plt.draw()
-        #plt.pause(0.5)
+        # plt.draw()
+        # plt.pause(1.0)
 
     def plot_map_and_landmarks(self, fig, map, map_cmap, map_layer_lst, cmap_lst, 
                                landmarks, swaths, title, vmin, vmax, 
@@ -751,3 +872,7 @@ class LandmarkDetector(Node):
             return None
             
         return fig
+    
+def gaussian_derivative(x, a, b, c, d):
+
+    return a * (1/np.sqrt(2 * np.pi)) * (c * (x - b)) * np.exp(-((c * (x - b))**2)/2) + d
