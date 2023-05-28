@@ -41,9 +41,6 @@ landmark_likelihood_treshold = 1e-6
 
 n_sample_points = 50    # Number of sample points for montecarlo simulation
 
-sigma_r = 1.0           # Variance for range measurements of landmarks
-sigma_b = 0.05          # Variance for bearing measurements of landmarks
-
 fg = initfg()
 
 last_data = undef
@@ -180,8 +177,8 @@ for (timestep, data) in enumerate(timesteps)
             landmark_range = data.measurements[meas_idx].range
                 
             p2br = Pose2Point2BearingRange(
-                Normal(rem2pi(-landmark_bearing, RoundNearest), sigma_b),
-                Normal(landmark_range, sigma_r)
+                Normal(rem2pi(-landmark_bearing, RoundNearest), measurement.sigma_b),
+                Normal(landmark_range, measurement.sigma_r)
             )
 
             addFactor!(fg, [new_pose, new_landmark], p2br)
@@ -209,8 +206,8 @@ for (timestep, data) in enumerate(timesteps)
             landmark_range = data.measurements[meas_idx].range
                 
             p2br = Pose2Point2BearingRange(
-                Normal(rem2pi(-landmark_bearing, RoundNearest), sigma_b),
-                Normal(landmark_range, sigma_r)
+                Normal(rem2pi(-landmark_bearing, RoundNearest), measurement.sigma_b),
+                Normal(landmark_range, measurement.sigma_r)
             )
             
             addFactor!(fg, variables, p2br)
@@ -264,8 +261,8 @@ for (timestep, data) in enumerate(timesteps)
         landmark_range = data.measurements[meas_idx].range
             
         p2br = Pose2Point2BearingRange(
-            Normal(rem2pi(-landmark_bearing, RoundNearest), sigma_b),
-            Normal(landmark_range, sigma_r)
+            Normal(rem2pi(-landmark_bearing, RoundNearest), measurement.sigma_b),
+            Normal(landmark_range, measurement.sigma_r)
         )
 
         addFactor!(fg, variables, p2br, multihypo=probabilities)
