@@ -494,7 +494,7 @@ class LandmarkDetector(Node):
                 map_origin_y + self.map_resolution.value * local_landmark_pos_boulder[0] - y_pose
             ]
 
-            theta = np.arctan2(v[1], v[0]) - yaw
+            theta = (np.arctan2(v[1], v[0]) - yaw) % (2 * np.pi)
 
             if theta > np.pi:
                 altitude = corr_alt_port
@@ -505,7 +505,7 @@ class LandmarkDetector(Node):
             min_slant_range = np.sqrt(min_ground_range**2 + altitude**2)
             max_slant_range = np.sqrt(max_ground_range**2 + altitude**2)
 
-            diff_slant_range = 0.8 * (max_ground_range - min_slant_range)
+            diff_slant_range = max_ground_range - min_slant_range
 
             votes_hole = 0
             votes_boulder = 0
@@ -524,7 +524,7 @@ class LandmarkDetector(Node):
                         int((max_slant_range + diff_slant_range)/self.sonar.slant_resolution)
                     ]
 
-                y_data = gaussian_filter(y_data, 2.0)
+                y_data = gaussian_filter(y_data, sigma=2.0, mode = 'nearest')
 
                 x_data = np.arange(0, len(y_data))
 
@@ -535,32 +535,56 @@ class LandmarkDetector(Node):
                     np.mean(y_data)
                 ]
 
+                bounds = (
+                    [-np.inf, -np.inf, 0, -np.inf],
+                    [np.inf, np.inf, np.inf, np.inf]
+                )
+
                 try: 
-                    popt, pcov = curve_fit(
+                    popt, _pcov = curve_fit(
                         gaussian_derivative,
                         x_data,
                         y_data,
-                        p0                    
+                        p0=p0,
+                        bounds=bounds                    
                     )
-                    if popt[0] < 0:
+                    if popt[0] > 0:
                         votes_hole += 1
                     else:
                         votes_boulder += 1
 
+                    # plt.rcParams['text.usetex'] = True
+                    # plt.rcParams['font.family'] = 'serif'
+                    # plt.rcParams['font.sans-serif'] = 'Charter'
+                    # plt.rcParams['font.size'] = 12
+                    # plt.rcParams['figure.constrained_layout.use'] = True
+                    # plt.rcParams['image.aspect'] = 'equal'
+
+                    # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/'
+                    # title = 'gaussian_derivative_fitted'
+
+                    # plt.clf()
+                    # plt.plot(x_data, y_data, c='green', label='Filtered swath')
+                    # plt.plot(x_data, gaussian_derivative(x_data, *popt), c='purple', linestyle='--', label='Fitted function')
+                    # plt.xlabel('Bin \#')
+                    # plt.ylabel('Amplitude')
+                    # plt.legend()
+                    # plt.draw()
+                    # plt.pause(0.1)
+                    # plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
+                    # print(popt)
+
+                    # input('Press any key to continue')
+
                 except:
-                    print('Not able to estimate')
+                    # print('Not able to estimate')
+                    pass
 
-                # plt.clf()
-                # plt.plot(x_data, y_data, 'b-', label='data')
-                # plt.plot(x_data, gaussian_derivative(x_data, *popt), 'g--')
-                # # plt.plot(x_data, gaussian_derivative(x_data, *p0))
-                # plt.draw()
-                # plt.pause(0.1)
 
-                # input('Press any key to continue')
 
-            print('votes_boulder: ', votes_boulder)
-            print('votes_hole: ', votes_hole)
+
+            # print('votes_boulder: ', votes_boulder)
+            # print('votes_hole: ', votes_hole)
 
             if votes_boulder > votes_hole:
 
@@ -646,10 +670,8 @@ class LandmarkDetector(Node):
                 continue
 
             sigma_b = 5.0 * (self.map_resolution.value / actual_ground_range)
-            sigma_r = 0.3 * (max_ground_range - min_ground_range)
+            sigma_r = np.sqrt(self.map_resolution.value**2 + (0.25 * (max_ground_range - min_ground_range))**2)
 
-            print('sigma_b: ', sigma_b* (180 / np.pi))
-            print('sigma_r: ', sigma_r)
 
             landmark_pose_transformation = [
                 global_landmark_pos[0] - swaths[0].odom[0],
@@ -665,7 +687,7 @@ class LandmarkDetector(Node):
                               - np.arctan2(landmark_pose_transformation[0] , landmark_pose_transformation[1]) \
                               - swaths[0].odom[4]) \
                               % (2 * np.pi)
-            
+                    
             self.landmarks.append(Landmark(
                 global_landmark_pos[0],
                 global_landmark_pos[1],
@@ -675,7 +697,7 @@ class LandmarkDetector(Node):
                 sigma_b,
                 landmark_height,
                 area_shadow,
-                fill_rate
+                fill_rate,
             ))
 
             new_landmarks.append(self.landmarks[-1])
@@ -867,7 +889,7 @@ class LandmarkDetector(Node):
             adjust_text(texts)
 
         if save_folder != None:
-            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
             plt.close(fig)
             return None
             
