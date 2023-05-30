@@ -92,7 +92,7 @@ class LandmarkDetector(Node):
             SwathArray,
             'swath_array',
             self.swath_array_callback,
-            qos_profile = 10
+            qos_profile = 100
         )
 
         self.sonar = SideScanSonar(
@@ -311,7 +311,7 @@ class LandmarkDetector(Node):
         high_threshold = 0.97
         high_threshold_structuring_element_size = 3
 
-        swaths = self.swath_buffer[:self.swaths_per_map.value]
+        swaths = copy.deepcopy(self.swath_buffer[:self.swaths_per_map.value])
         self.processed_swaths.extend(copy.deepcopy(swaths))
         
         self.swath_buffer = self.swath_buffer[self.swaths_per_map.value//2:]
@@ -719,12 +719,12 @@ class LandmarkDetector(Node):
 
         # Save for offline SLAM
 
-        # timestep = Timestep(swaths[0].odom, new_landmarks)
+        timestep = Timestep(swaths[0].odom, new_landmarks)
 
-        # filename = '/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle'
+        filename = '/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle'
 
-        # with open(filename, "ab") as f:
-        #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(filename, "ab") as f:
+            pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # Plotting
         plt.rcParams['text.usetex'] = True
@@ -776,29 +776,37 @@ class LandmarkDetector(Node):
         cmap_summer = matplotlib.cm.summer
         cmap_spring = matplotlib.cm.spring
 
-        self.fig1 = self.plot_map_and_landmarks(
-            self.fig1, map, cmap_copper,
-            [landmark_cand_low_thres_im, landmark_low_thres_im],
-            [cmap_summer, cmap_spring],
-            [], swaths, 'x' + str(self.n_timesteps) + ' - geometric filtering low threshold',
-            vmin, vmax, map_origin, tick_distance, save_folder
-        )
+        # self.fig1 = self.plot_map_and_landmarks(
+        #     self.fig1, map, cmap_copper,
+        #     [landmark_cand_low_thres_im, landmark_low_thres_im],
+        #     [cmap_summer, cmap_spring],
+        #     [], swaths, 'x' + str(self.n_timesteps) + ' - geometric filtering low threshold',
+        #     vmin, vmax, map_origin, tick_distance, save_folder
+        # )
 
-        self.fig2 = self.plot_map_and_landmarks(
-            self.fig2, map, cmap_copper,
-            [landmark_cand_high_thres_im, landmark_high_thres_im],
-            [cmap_summer, cmap_spring],
-            [], swaths, 'x' + str(self.n_timesteps) + ' - geometric filtering high threshold',
-            vmin, vmax, map_origin, tick_distance, save_folder
-        )
+        # self.fig6 = self.plot_map_and_landmarks(
+        #     self.fig2, map, cmap_copper,
+        #     [landmark_cand_high_thres_im],
+        #     [cmap_summer],
+        #     [], swaths, 'x' + str(self.n_timesteps) + ' - initial landmark candidates',
+        #     vmin, vmax, map_origin, tick_distance, save_folder
+        # )
 
-        self.fig3 = self.plot_map_and_landmarks(
-            self.fig3, map, cmap_copper,
-            [landmark_high_thres_im, landmark_low_thres_im],
-            [cmap_summer, cmap_spring],
-            [], swaths, 'x' + str(self.n_timesteps) + ' - low and high threshold filtering',
-            vmin, vmax, map_origin, tick_distance, save_folder
-        )
+        # self.fig2 = self.plot_map_and_landmarks(
+        #     self.fig2, map, cmap_copper,
+        #     [landmark_cand_high_thres_im, landmark_high_thres_im],
+        #     [cmap_summer, cmap_spring],
+        #     [], swaths, 'x' + str(self.n_timesteps) + ' - geometric filtering high threshold',
+        #     vmin, vmax, map_origin, tick_distance, save_folder
+        # )
+
+        # self.fig3 = self.plot_map_and_landmarks(
+        #     self.fig3, map, cmap_copper,
+        #     [landmark_high_thres_im, landmark_low_thres_im],
+        #     [cmap_summer, cmap_spring],
+        #     [], swaths, 'x' + str(self.n_timesteps) + ' - low and high threshold filtering',
+        #     vmin, vmax, map_origin, tick_distance, save_folder
+        # )
 
         self.fig4 = self.plot_map_and_landmarks(
             self.fig4, map, cmap_copper,
@@ -847,17 +855,17 @@ class LandmarkDetector(Node):
 
         for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
             v = map_origin[0] - i * self.map_resolution.value
-            x_labels.append('$' + ('%.2f' % v) + ' m$')
+            x_labels.append('$' + ('%.2f' % v) + '$')
             x_locations.append(i)
         for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
             v = map_origin[1] + i * self.map_resolution.value
-            y_labels.append('$' + ('%.2f' % v) + ' m$')
+            y_labels.append('$' + ('%.2f' % v) + '$')
             y_locations.append(i)
 
         ax1.set_yticks(x_locations, x_labels)
         ax1.set_xticks(y_locations, y_labels)
-        ax1.set_ylabel('North')
-        ax1.set_xlabel('East')
+        ax1.set_ylabel('North [m]')
+        ax1.set_xlabel('East [m]')
 
         
 
