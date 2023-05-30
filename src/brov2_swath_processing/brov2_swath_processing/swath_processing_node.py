@@ -611,26 +611,28 @@ class SwathProcessingNode(Node):
             save_folder
         )
 
-        labels = ['$-30.0 m$', '$-15.0 m$', '$0.0 m$', '$15.0 m$', '$30.0 m$']
+        labels = ['$-30.0$', '$-15.0$', '$0.0$', '$15.0$', '$30.0$']
 
         self.plot_swaths(
             self.swaths_slant_range,
             'Slant range corrected',
             save_folder,
-            labels=labels
+            labels=labels,
+            x_label='Across track [m]'
         )
 
         self.plot_swaths(
             self.swaths_slant_range_no_corr,
             'Slant range corrected - no pitch roll correction',
             save_folder,
-            labels=labels
+            labels=labels,
+            x_label='Across track [m]'
         )
 
         plt.show()
 
 
-    def plot_swaths(self, swaths, title:str, save_folder=None, vmin=0.6, vmax=1.4, labels=None):
+    def plot_swaths(self, swaths, title:str, save_folder=None, vmin=0.6, vmax=1.4, labels=None, x_label=None):
 
         im = np.empty((len(swaths), self.sonar.n_bins * 2))
 
@@ -659,7 +661,10 @@ class SwathProcessingNode(Node):
 
         ax1 = fig.add_subplot(111)
         ax1.imshow(im, cmap=cmap_copper, vmin=vmin , vmax=vmax)
-        ax1.set_xlabel('Across track [bin \#]')
+        if x_label == None:
+            ax1.set_xlabel('Across track [bin \#]')
+        else:
+            ax1.set_xlabel(x_label)
         ax1.set_ylabel('Along track [swath \#]')
 
         if labels == None:
@@ -671,10 +676,10 @@ class SwathProcessingNode(Node):
         # Show distance traveled on right side
         ax2 = ax1.secondary_yaxis('right')
         ax2.yaxis.set_major_formatter(DistanceTraveldFormatter(distance_traveled))
-        ax2.set_ylabel('Distance traveled')
+        ax2.set_ylabel('Distance traveled [m]')
 
         if save_folder != None:
-            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
 
         return fig
 
@@ -718,7 +723,7 @@ class SwathProcessingNode(Node):
 
         y = range(0,len(swaths))
 
-        plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone')
+        plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone corr.')
         plt.plot(blind_zone_border_stb, y, c='g', linewidth=2)
         plt.plot(blind_zone_border_no_corr_port, y, c='r', linewidth=2, label='Blind zone no corr.')
         plt.plot(blind_zone_border_no_corr_stb, y, c='r', linewidth=2)
@@ -746,7 +751,7 @@ class SwathProcessingNode(Node):
         plt.legend(fancybox=True, shadow=True)
 
         if save_folder != None:
-            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
 
 
     def plot_blind_zone_removal_zoomed(self, swaths, title:str, save_folder=None, vmin=0.6, vmax=1.4, labels=None, width=6):
@@ -835,11 +840,11 @@ class SwathProcessingNode(Node):
         # Show distance traveled on right side
         ax2 = ax1.secondary_yaxis('right')
         ax2.yaxis.set_major_formatter(DistanceTraveldFormatter(distance_traveled))
-        ax2.set_ylabel('Distance traveled')
+        ax2.set_ylabel('Distance traveled [m]')
 
         y = range(0,len(swaths))
 
-        plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone')
+        plt.plot(blind_zone_border_port, y, c='g', linewidth=2, label='Blind zone corr.')
         plt.plot(blind_zone_border_stb, y, c='g', linewidth=2)
         plt.plot(blind_zone_border_no_corr_port, y, c='r', linewidth=2, label='Blind zone no corr.')
         plt.plot(blind_zone_border_no_corr_stb, y, c='r', linewidth=2)
@@ -847,7 +852,7 @@ class SwathProcessingNode(Node):
         plt.plot(no_echo_stb, y, c='c', linewidth=2)
 
         if save_folder != None:
-            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
 
 class DistanceTraveldFormatter(Formatter):
     def __init__(self, distance_traveled):
@@ -855,6 +860,6 @@ class DistanceTraveldFormatter(Formatter):
 
     def __call__(self, x, pos=0):
         try:
-            return '$' + ('%.2f' % self.distance_traveled[int(round(x))]) + 'm$'
+            return '$' + ('%.2f' % self.distance_traveled[int(round(x))]) + '$'
         except IndexError:
             pass
