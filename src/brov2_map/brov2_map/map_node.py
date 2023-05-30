@@ -157,7 +157,7 @@ class MapNode(Node):
         # map_resolutions = [0.05, 0.1, 0.1, 0.1, 0.2, 0.1]
         # knn_max_variance = 0.05
 
-        # # For example map generation. Remember to change to 1000 swaths and disable slant range corr. 
+        # # For example map generation. Remember to change to 1000 swaths, disable slant range corr and remove cropping of map.
         # save_folder = '/home/repo/Navigation-brov2/images/map_generation/map_example_'
         # methods = ['optimized']
         # probability_thresholds = [0.1]
@@ -282,17 +282,17 @@ class MapNode(Node):
 
         for i in range(x_tick_start, n_rows, int(tick_distanse/self.map_resolution.value)):
             v = map_origin[0] - i * self.map_resolution.value
-            x_labels.append('$' + ('%.2f' % v) + ' m$')
+            x_labels.append('$' + ('%.2f' % v) + '$')
             x_locations.append(i)
         for i in range(y_tick_start, n_colums, int(tick_distanse/self.map_resolution.value)):
             v = map_origin[1] + i * self.map_resolution.value
-            y_labels.append('$' + ('%.2f' % v) + ' m$')
+            y_labels.append('$' + ('%.2f' % v) + '$')
             y_locations.append(i)
 
         plt.yticks(x_locations, x_labels)
         plt.xticks(y_locations, y_labels)
-        plt.ylabel('North')
-        plt.xlabel('East')
+        plt.ylabel('North [m]')
+        plt.xlabel('East [m]')
 
         # plt.grid(visible=True)
 
@@ -300,5 +300,5 @@ class MapNode(Node):
             plt.colorbar()
 
         if save_folder != None:
-            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps')
+            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
         
