@@ -670,7 +670,9 @@ class LandmarkDetector(Node):
                 continue
 
             sigma_b = 5.0 * (self.map_resolution.value / actual_ground_range)
-            sigma_r = np.sqrt(self.map_resolution.value**2 + (0.25 * (max_ground_range - min_ground_range))**2)
+            sigma_r = np.sqrt(self.map_resolution.value**2 + (0.5 * (max_ground_range - min_ground_range))**2)
+
+            print(sigma_r)
 
 
             landmark_pose_transformation = [
