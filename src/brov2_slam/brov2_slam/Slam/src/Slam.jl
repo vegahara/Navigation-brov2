@@ -31,13 +31,13 @@ def load_pickle(filename):
 
 load_pickle = py"load_pickle"
 
-filename = "/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle"
+filename = "/home/repo/Navigation-brov2/images/landmark_detection/Training_dataset/pose_and_landmarks_training_data.pickle"
 
 timesteps = load_pickle(filename)
 
 # Threshold to determine which landmark hypotheses to assosiate. 
 #If no landmarks is above the threshold, a new landmark is created
-landmark_likelihood_treshold = 1e-6  
+landmark_likelihood_treshold = 1e-10  
 
 n_sample_points = 50    # Number of sample points for montecarlo simulation
 
@@ -106,7 +106,7 @@ for (timestep, data) in enumerate(timesteps)
             throw(ErrorException("Transformed covariance matrix is not positive definite"))
         end
 
-        println(sΣ_b)
+        # println(sΣ_b)
 
         p2 = Pose2Pose2(MvNormal(Δx_b, sΣ_b))
 
@@ -158,6 +158,8 @@ for (timestep, data) in enumerate(timesteps)
                 .* landmark_mdf(landmark_evaluation_points)) 
                 / n_sample_points
             )
+
+            println(likelihood)
 
             if likelihood >= landmark_likelihood_treshold
                 landmarks_to_assosiate[meas_idx][landmark] = likelihood 
@@ -272,11 +274,11 @@ for (timestep, data) in enumerate(timesteps)
 
     solveTree!(fg)
 
-    # p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
+    p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
 
-    # p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/2D_plot.pdf")
+    p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/2D_plot.pdf")
 
-    saveDFG("/home/repo/Navigation-brov2/images/slam/factor_graphs/fg_x$(timestep)", fg)
+    saveDFG("/home/repo/Navigation-brov2/images/slam/Training_dataset/factor_graphs/fg_x$(timestep)", fg)
 
 end
 
