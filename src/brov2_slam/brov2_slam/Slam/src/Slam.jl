@@ -31,13 +31,13 @@ def load_pickle(filename):
 
 load_pickle = py"load_pickle"
 
-filename = "/home/repo/Navigation-brov2/images/landmark_detection/Training_dataset/pose_and_landmarks_training_data.pickle"
+filename = "/home/repo/Navigation-brov2/images/landmark_detection/Test_dataset/pose_and_landmarks_training_data.pickle"
 
 timesteps = load_pickle(filename)
 
 # Threshold to determine which landmark hypotheses to assosiate. 
 #If no landmarks is above the threshold, a new landmark is created
-landmark_likelihood_treshold = 1e-10  
+landmark_likelihood_treshold = 1e-7  
 
 n_sample_points = 50    # Number of sample points for montecarlo simulation
 
@@ -278,7 +278,7 @@ for (timestep, data) in enumerate(timesteps)
 
     p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/2D_plot.pdf")
 
-    saveDFG("/home/repo/Navigation-brov2/images/slam/Training_dataset/factor_graphs/fg_x$(timestep)", fg)
+    saveDFG("/home/repo/Navigation-brov2/images/slam/factor_graphs/Test_dataset/fg_x$(timestep)", fg)
 
 end
 

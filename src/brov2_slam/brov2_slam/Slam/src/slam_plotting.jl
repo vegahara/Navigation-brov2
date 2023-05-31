@@ -482,12 +482,12 @@ def load_pickle(filename):
 
 load_pickle = py"load_pickle"
 
-filename = "/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle"
+filename = "/home/repo/Navigation-brov2/images/landmark_detection/Training_dataset/pose_and_landmarks_training_data.pickle"
 
 timesteps = load_pickle(filename)
 
 
-for t in 1:37
+for t in 1:59
 
     x = []
     y = []
@@ -497,19 +497,19 @@ for t in 1:37
         append!(y, timesteps[i].pose[1])
     end
 
-    p0 = Gadfly.plot(
-        Gadfly.layer(x=x,y=y,Geom.path(),Theme(default_color=parse(Colorant,"grey"))),
-        Coord.cartesian(fixed=true),
-      )
+    # p0 = Gadfly.plot(
+    #     Gadfly.layer(x=x,y=y,Geom.path(),Theme(default_color=parse(Colorant,"grey"))),
+    #     Coord.cartesian(fixed=true),
+    #   )
 
-    fg = loadDFG("/home/repo/Navigation-brov2/images/slam/factor_graphs/fg_x$t") 
-    p1 = plotSLAM2D_mine(fg, drawPoints=false, drawEllipse=false, drawContour=true, levels=1, drawTriads=false, dyadScale=1.0)
+    fg = loadDFG("/home/repo/Navigation-brov2/images/slam/factor_graphs/Training_dataset/fg_x$t") 
+    # p1 = plotSLAM2D_mine(fg, drawPoints=false, drawEllipse=false, drawContour=true, levels=2, drawTriads=false, dyadScale=1.0)
 
-    for l in p0.layers
-        push!(p1.layers, l)
-    end
+    # for l in p0.layers
+    #     push!(p1.layers, l)
+    # end
 
-    p1 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/2D_plot_x$t.pdf")
+    # p1 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/slam/plots/Training_dataset/2D_plot_x$t.pdf", dpi=300.0)
 
-    # drawGraph(fg, show=false, filepath="/home/repo/Navigation-brov2/images/slam/dot_files/fg_x$t.dot")
+    drawGraph(fg, show=false, filepath="/home/repo/Navigation-brov2/images/slam/dot_files/Training_dataset/fg_x$t.dot")
 end
