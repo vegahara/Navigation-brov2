@@ -674,8 +674,8 @@ class LandmarkDetector(Node):
 
 
             landmark_pose_transformation = [
-                global_landmark_pos[0] - swaths[0].odom[0],
-                global_landmark_pos[1] - swaths[0].odom[1]
+                global_landmark_pos[0] - swaths[-1].odom[0],
+                global_landmark_pos[1] - swaths[-1].odom[1]
             ]
 
             landmark_range = np.sqrt(
