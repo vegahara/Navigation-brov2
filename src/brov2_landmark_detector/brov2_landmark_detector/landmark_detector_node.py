@@ -685,7 +685,7 @@ class LandmarkDetector(Node):
 
             landmark_bearing = (np.pi / 2 \
                               - np.arctan2(landmark_pose_transformation[0] , landmark_pose_transformation[1]) \
-                              - swaths[0].odom[4]) \
+                              - swaths[-1].odom[4]) \
                               % (2 * np.pi)
                     
             self.landmarks.append(Landmark(
@@ -719,7 +719,7 @@ class LandmarkDetector(Node):
 
         # Save for offline SLAM
 
-        timestep = Timestep(swaths[0].odom, new_landmarks)
+        timestep = Timestep(swaths[-1].odom, new_landmarks)
 
         filename = '/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle'
 
@@ -808,13 +808,13 @@ class LandmarkDetector(Node):
         #     vmin, vmax, map_origin, tick_distance, save_folder
         # )
 
-        self.fig4 = self.plot_map_and_landmarks(
-            self.fig4, map, cmap_copper,
-            [landmark_no_height_filtered_im, landmark_im],
-            [cmap_summer, cmap_spring],
-            landmarks, swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
-            vmin, vmax, map_origin, tick_distance, save_folder
-        )
+        # self.fig4 = self.plot_map_and_landmarks(
+        #     self.fig4, map, cmap_copper,
+        #     [landmark_no_height_filtered_im, landmark_im],
+        #     [cmap_summer, cmap_spring],
+        #     landmarks, swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
+        #     vmin, vmax, map_origin, tick_distance, save_folder
+        # )
 
         self.fig5 = self.plot_map_and_landmarks(
             self.fig5, self.map_full.intensity_map, cmap_copper,
