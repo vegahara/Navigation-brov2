@@ -31,7 +31,7 @@ def load_pickle(filename):
 
 load_pickle = py"load_pickle"
 
-filename = "/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/pose_and_landmarks_training_data.pickle"
+filename = "/home/repo/Navigation-brov2/images/full_training_200_swaths/pose_and_landmarks_training_data.pickle"
 
 timesteps = load_pickle(filename)
 
@@ -58,7 +58,7 @@ for (timestep, data) in enumerate(timesteps)
         pp2 = PriorPose2(MvNormal(
             [data.pose[2]; data.pose[1]; rem2pi(-data.pose[5] + pi/2, RoundNearest)], 
             Matrix(Diagonal(
-                [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]]
+                [data.pose[6][1]; data.pose[6][8]; data.pose[6][36]].^2
             ))
         ))
 
@@ -95,9 +95,9 @@ for (timestep, data) in enumerate(timesteps)
         Δx_b[3] = rem2pi(Δx_b[3], RoundNearest)
 
         Σ_w = Matrix(Diagonal([
-            data.pose[6][1] - last_data.pose[6][1],
-            data.pose[6][8] - last_data.pose[6][8],
-            data.pose[6][36]
+            data.pose[6][1]^2 - last_data.pose[6][1]^2,
+            data.pose[6][8]^2 - last_data.pose[6][8]^2,
+            data.pose[6][36]^2
         ]))
 
         Σ_b = T * Σ_w * T'
@@ -275,7 +275,7 @@ for (timestep, data) in enumerate(timesteps)
 
     p3 = plotSLAM2D(fg, dyadScale=1.0, drawPoints=false, drawTriads=true, drawEllipse=false, levels=3)
 
-    p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/2D_plot.pdf")
+    p3 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/full_training_200_swaths/2D_plot.pdf")
 
 end
 
@@ -287,6 +287,6 @@ end
 
 p2 = drawGraph(fg)
     
-p2 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/landmark_detection_data/training_100_swaths/graph_plot.pdf")
+p2 |> Gadfly.PDF("/home/repo/Navigation-brov2/images/full_training_200_swaths/graph_plot.pdf")
 
 end # module Slam
