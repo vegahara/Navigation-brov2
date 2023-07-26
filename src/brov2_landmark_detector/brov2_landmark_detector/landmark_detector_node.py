@@ -318,12 +318,14 @@ class LandmarkDetector(Node):
         
         map_origin_x, map_origin_y, n_rows, n_colums = \
             self.find_map_origin_and_size(swaths)
+        
+        probability_threshold = 0.1
                       
-        intensity_map, prob_map, observed_swaths_map, range_map = generate_map(
+        intensity_map, range_map, observed_swaths_map = generate_map(
             n_rows, n_colums, self.sonar.n_bins, 
             self.map_resolution.value, map_origin_x, map_origin_y, 
             swaths, self.sonar.range,
-            self.swath_ground_range_resolution.value
+            self.swath_ground_range_resolution.value, probability_threshold
         )
      
         intensity_map = np.asarray(intensity_map, dtype=np.float64)
@@ -721,12 +723,12 @@ class LandmarkDetector(Node):
 
         # Save for offline SLAM
 
-        timestep = Timestep(swaths[-1].odom, new_landmarks)
+        # timestep = Timestep(swaths[-1].odom, new_landmarks)
 
-        filename = '/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle'
+        # filename = '/home/repo/Navigation-brov2/images/landmark_detection/pose_and_landmarks_training_data.pickle'
 
-        with open(filename, "ab") as f:
-            pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
+        # with open(filename, "ab") as f:
+        #     pickle.dump(timestep, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # Plotting
         plt.rcParams['text.usetex'] = True
@@ -825,8 +827,8 @@ class LandmarkDetector(Node):
             vmin, vmax, self.map_full.origin, tick_distance, save_folder, False
         )
 
-        # plt.draw()
-        # plt.pause(1.0)
+        plt.draw()
+        plt.pause(1.0)
 
     def plot_map_and_landmarks(self, fig, map, map_cmap, map_layer_lst, cmap_lst, 
                                landmarks, swaths, title, vmin, vmax, 
@@ -868,8 +870,6 @@ class LandmarkDetector(Node):
         ax1.set_xticks(y_locations, y_labels)
         ax1.set_ylabel('North [m]')
         ax1.set_xlabel('East [m]')
-
-        
 
         for swath in swaths:
             ax1.scatter(

@@ -34,7 +34,7 @@ class MapNode(Node):
                         ('sonar_transducer_alpha', pi/3),
                         ('sonar_transducer_beta', (0.5*np.pi)/3),
                         ('swath_ground_range_resolution', 0.03),
-                        ('swaths_per_map', 400),
+                        ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.001)]
         )
@@ -140,15 +140,14 @@ class MapNode(Node):
 
         print("Generating map")
 
-        for i in range(1):
-            echo_map, prob_map, observed_swaths, range_map= generate_map(
-                n_rows, n_colums, self.sonar.n_bins,
-                self.map_resolution.value, map_origin_x, map_origin_y,
-                self.swath_buffer, self.sonar.range,
-                self.swath_ground_range_resolution.value,
-            )
+        probability_threshold = 0.1
 
-        print
+        echo_map, range_map, observed_swaths = generate_map(
+            n_rows, n_colums, self.sonar.n_bins,
+            self.map_resolution.value, map_origin_x, map_origin_y,
+            self.swath_buffer, self.sonar.range,
+            self.swath_ground_range_resolution.value, probability_threshold
+        )
 
         # filename = '/home/repo/Navigation-brov2/images/map_400_swaths_5_cm_res_new_method.csv'
         # np.savetxt(filename, echo_map, delimiter=',')
@@ -158,13 +157,9 @@ class MapNode(Node):
         ax1 = fig.add_subplot(1, 2, 1)
         ax1.imshow(echo_map, cmap='copper', vmin=0.6, vmax=1.4)
 
-        # ax2 = fig.add_subplot(1, 2, 2)
-        #For probability map
-        # ax2.imshow(prob_map, cmap='gray', vmin=0.0, vmax=1.0)
-        # For variance map
-        # ax2.imshow(prob_map, cmap='copper', vmin=0.0, vmax=0.05)
-        # For inverse map
-        # ax2.imshow(prob_map, cmap='copper', vmin=0.6, vmax=1.4)
+        ax2 = fig.add_subplot(1, 2, 2)
+        ax2.imshow(range_map, cmap='gray')
+
 
         x_labels = []
         x_locations = []
@@ -186,10 +181,10 @@ class MapNode(Node):
         ax1.set_yticklabels(x_labels)
         ax1.set_xticks(y_locations)
         ax1.set_xticklabels(y_labels)
-        # ax2.set_yticks(x_locations)
-        # ax2.set_yticklabels(x_labels)
-        # ax2.set_xticks(y_locations)
-        # ax2.set_xticklabels(y_labels)
+        ax2.set_yticks(x_locations)
+        ax2.set_yticklabels(x_labels)
+        ax2.set_xticks(y_locations)
+        ax2.set_xticklabels(y_labels)
 
         plt.show()
 
