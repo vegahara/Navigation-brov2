@@ -12,7 +12,7 @@ docker run  --rm -it \
             navigation-brov2_im:latest \
             bash -c "cd /home/repo/Navigation-brov2 && \
                 julia scripts/update_pkg.jl && \
+                source /opt/ros/humble/setup.sh && \
                 colcon build --symlink-install --packages-ignore brov2_dvl && \
-                source install/setup.bash && \
                 ./scripts/start_tmux.sh && \
                 bash -l"

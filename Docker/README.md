@@ -6,7 +6,7 @@ docker build . -t navigation-brov2_im -f Docker/Dockerfile
 
 If the json step fail run ´git submodule update --init´ before building the image again.
 
-To run the docker container run `run_docker.sh` from the workspace.
+To run the docker container run `run_docker.sh` from the workspace. It might be nessisary to delete the `install` and `build` folder when starting up on an new computer. 
 
 To open an additional bash terminal run
 

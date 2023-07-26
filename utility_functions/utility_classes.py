@@ -39,11 +39,13 @@ class Map:
             self.probability_map = np.full((n_rows, n_colums), np.nan, dtype=float)
 
 class Landmark:
-    def __init__(self, x, y, range, bearing, height, area, fill_rate) -> None:
+    def __init__(self, x, y, range, sigma_r, bearing, sigma_b, height, area, fill_rate) -> None:
         self.x = x                  # Global x position of landmark
         self.y = y                  # Global y position of landmark
         self.range = range          # Range between current pose and landmark
+        self.sigma_r = sigma_r      # Standard deviation of range measurement
         self.bearing = bearing      # Bearing between current pose and landmark
+        self.sigma_b = sigma_b      # Standard deviation of bearing measurement
         self.height = height        # Estimated height of landmark
         self.area = area            # Total area of the shadow landmark in m²
         self.fill_rate = fill_rate  # Fillrate of the square bounding box around the landmark

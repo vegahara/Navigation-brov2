@@ -360,14 +360,68 @@ class SwathProcessingNode(Node):
         swath.odom.pose.pose.position.y = position_old.y + t_odom * (position_new.y - position_old.y)
         swath.odom.pose.pose.position.z = position_old.z + t_odom * (position_new.z - position_old.z)
 
-        swath.odom.pose.covariance = self.unprocessed_odoms[odom_new_index].pose.covariance
-
+        swath.odom.pose.covariance = \
+            self.unprocessed_odoms[odom_new_index - 1].pose.covariance + \
+            t_odom * \
+            (self.unprocessed_odoms[odom_new_index].pose.covariance - \
+            self.unprocessed_odoms[odom_new_index - 1].pose.covariance)
+                                    
         # Remove old msgs
         self.unprocessed_odoms = self.unprocessed_odoms[odom_new_index-1:]
         self.unprocessed_altitudes = self.unprocessed_altitudes[altitude_new_index-1:]
 
         return swath, True
 
+    def intensity_correction_lambertian(self, swath:Swath, roll:float, pitch:float) -> Swath:
+
+        k_beam = 2.78
+
+        bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(
+            swath, roll, pitch
+        )
+
+        corr_alt_port, corr_alt_stb = self.get_corrected_sonar_altitude(
+            swath, roll, pitch
+        )
+
+        # Port swath
+        swath_normalization = np.linspace(0., self.sonar.n_bins-bin_fbr_port, self.sonar.n_bins-bin_fbr_port)
+
+        for bin in range(bin_fbr_port, self.sonar.n_bins):
+            bin_slant_range = bin * self.sonar.slant_resolution
+            
+            insidence_angle = np.arccos(corr_alt_port / bin_slant_range)
+            beam_angle = (np.pi / 2) - insidence_angle - self.sonar.theta - roll
+
+            beam_pattern = (
+                (k_beam * np.sin(beam_angle)) / \
+                (np.sin( k_beam * np.sin(beam_angle))) \
+            ) ** 4
+
+            swath_normalization[-(bin - bin_fbr_port + 1)] = beam_pattern * (np.cos(insidence_angle) ** 2)
+
+        swath.data_port[:-bin_fbr_port] = np.divide(swath.data_port[:-bin_fbr_port], swath_normalization)
+
+        # Starboard swath
+        swath_normalization = np.linspace(0., self.sonar.n_bins-bin_fbr_stb, self.sonar.n_bins-bin_fbr_stb)
+
+        for bin in range(bin_fbr_stb, self.sonar.n_bins):
+         
+            bin_slant_range = bin * self.sonar.slant_resolution
+            
+            insidence_angle = np.arccos(corr_alt_stb / bin_slant_range)
+            beam_angle = (np.pi / 2) - insidence_angle - self.sonar.theta + roll
+
+            beam_pattern = (
+                (k_beam * np.sin(beam_angle)) / \
+                (np.sin( k_beam * np.sin(beam_angle))) \
+            ) ** 4  
+
+            swath_normalization[bin - bin_fbr_stb] = beam_pattern * (np.cos(insidence_angle) ** 2)
+
+        swath.data_stb[bin_fbr_stb:] = np.divide(swath.data_stb[bin_fbr_stb:], swath_normalization)
+
+        return swath
 
     def intensity_correction(self, swath:Swath, roll:float, pitch:float) -> Swath:
 
@@ -394,6 +448,7 @@ class SwathProcessingNode(Node):
             x, 
             smooth=self.swath_normalizaton_smoothing_param
         )
+        
         # plt.plot(swath.data_port)
         # plt.plot(spl_port)
         # plt.show()
@@ -401,7 +456,7 @@ class SwathProcessingNode(Node):
         
         swath.data_port[:-bin_fbr_port] = np.divide(swath.data_port[:-bin_fbr_port], spl_port)
 
-        # plt.plot(swath.data_port)
+        # plt.plot(swath.data_stb)
         # plt.show()
         # input('Press any key to continue')
         return swath
@@ -521,6 +576,8 @@ class SwathProcessingNode(Node):
         swath = self.blind_zone_removal(swath, roll, pitch)
 
         # swath_bf = self.intensity_correction_bf(swath, roll, pitch, 20.0, 100.0)
+
+        # swath = self.intensity_correction_lambertian(swath, roll, pitch)
 
         swath = self.intensity_correction(swath, roll, pitch)
 

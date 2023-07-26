@@ -233,18 +233,18 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
 
                 # For attitude corrected altitude
                 corr_altitude_port = swath.altitude -  
-                                     sonar_z_offset * cos_roll * cos_pitch + 
-                                     sonar_x_offset * sin_pitch +
-                                     sonar_y_offset * sin_roll * cos_pitch
+                                    sonar_z_offset * cos_roll * cos_pitch + 
+                                    sonar_x_offset * sin_pitch +
+                                    sonar_y_offset * sin_roll * cos_pitch
                 corr_altitude_stb = swath.altitude - 
                                     sonar_z_offset * cos_roll * cos_pitch + 
                                     sonar_x_offset * sin_pitch -
                                     sonar_y_offset * sin_roll * cos_pitch
 
                 fbr_slant_range_port = corr_altitude_port / 
-                                       sin(angle_fbr - swath.odom[3])
+                                    sin(angle_fbr - swath.odom[3])
                 fbr_slant_range_stb = corr_altitude_stb / 
-                                      sin(angle_fbr + swath.odom[3])
+                                    sin(angle_fbr + swath.odom[3])
 
                 fbr_ground_range_port = sqrt(fbr_slant_range_port ^ 2 - corr_altitude_port ^ 2) 
                 fbr_ground_range_stb = sqrt(fbr_slant_range_stb ^ 2 - corr_altitude_stb ^ 2)
@@ -253,45 +253,64 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                 sonar_ground_range_stb = sqrt(sonar_range ^ 2 - corr_altitude_stb ^ 2)
 
                 horisontal_y_offset = sonar_y_offset * cos_roll +
-                                      sonar_z_offset * sin_roll
+                sonar_z_offset * sin_roll
+
+                cos_yaw_port_transducer = cos(swath.odom[5] - pi/2)
+                sin_yaw_port_transducer = sin(swath.odom[5] - pi/2)
+                cos_yaw_stb_transducer = cos(swath.odom[5] + pi/2)
+                sin_yaw_stb_transducer = sin(swath.odom[5] + pi/2)
+
+                horisontal_y_offset_g_port = SVector(
+                    horisontal_y_offset * cos_yaw_port_transducer,
+                    horisontal_y_offset * sin_yaw_port_transducer
+                )
+                horisontal_y_offset_g_stb = SVector(
+                    horisontal_y_offset * cos_yaw_stb_transducer,
+                    horisontal_y_offset * sin_yaw_stb_transducer
+                )
 
                 empty!(cells_to_visit)
 
                 # Find first cell outside blindzone on port and stb 
                 row_col_port = SVector(
                     Int(ceil(
-                        -(swath.odom[1] - map_origin[1] + 
-                        fbr_ground_range_port * cos(swath.odom[5] - pi/2)) / 
+                        -(swath.odom[1] - map_origin[1] 
+                        + fbr_ground_range_port * cos_yaw_port_transducer
+                        + horisontal_y_offset_g_port[1]) /
                         map_resolution
                     )),
                     Int(ceil(
-                        (swath.odom[2] - map_origin[2] + 
-                        fbr_ground_range_port * sin(swath.odom[5] - pi/2)) / 
+                        (swath.odom[2] - map_origin[2] 
+                        + fbr_ground_range_port * sin_yaw_port_transducer
+                        + horisontal_y_offset_g_port[2]) /
                         map_resolution
                     ))
                 )
 
                 row_col_stb = SVector(
                     Int(ceil(
-                        -(swath.odom[1] - map_origin[1] + 
-                        fbr_ground_range_stb * cos(swath.odom[5] + pi/2)) / 
+                        -(swath.odom[1] - map_origin[1] 
+                        + fbr_ground_range_stb * cos_yaw_stb_transducer
+                        + horisontal_y_offset_g_stb[1]) /
                         map_resolution
                     )),
                     Int(ceil(
-                        (swath.odom[2] - map_origin[2] + 
-                        fbr_ground_range_stb * sin(swath.odom[5] + pi/2)) / 
+                        (swath.odom[2] - map_origin[2] 
+                        + fbr_ground_range_stb * sin_yaw_stb_transducer
+                        + horisontal_y_offset_g_stb[2]) /
                         map_resolution
-                    ))
+                ))
                 )
-
-                # Add cell with and do 8 connectivity
-                for i in -1:1, j in -1:1
-                    push!(cells_to_visit, row_col_port + SVector(i,j))
-                    push!(cells_to_visit, row_col_stb + SVector(i,j))
-                end
             end
 
             @timeit to "cell_iteration" begin
+                # Add cell with and do 8 connectivity for port side
+                for i in -1:1, j in -1:1
+                    push!(cells_to_visit, row_col_port + SVector(i,j))
+                end
+
+                horisontal_y_offset_g = horisontal_y_offset_g_port
+
                 while !isempty(cells_to_visit)
                     row, colum = pop!(cells_to_visit)
 
@@ -302,7 +321,8 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                     cell_visited[row ,colum] = true
 
                     @timeit to "cell_meas_trans" calculate_cell_measurement_transformation!(
-                        cell_transformations, row, colum, swath.odom, map_origin, map_resolution
+                        cell_transformations, row, colum, swath.odom, 
+                        map_origin, map_resolution, horisontal_y_offset_g
                     )
 
                     prob_observation = @timeit to "cell_probability" get_cell_probability_gaussian(
@@ -314,7 +334,67 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
                     if prob_observation >= probability_threshold
                         intensity = @timeit to "cell_intensity" get_cell_intensity_non_corr_swath(
                             cell_transformations, row, colum, 
-                            swath, swath_slant_resolution, n_bins, horisontal_y_offset,
+                            swath, swath_slant_resolution, n_bins,
+                            corr_altitude_port, corr_altitude_stb,
+                            fbr_slant_range_port, fbr_slant_range_stb
+                        ) :: Float64
+
+                        @timeit to "vector_pushing" begin
+                            if !isnan(intensity)
+                                cells_to_filter[row,colum] = false
+                                push!(observed_swaths[row, colum], swath_index) # 0 indexed
+                                push!(probabilities[row, colum], prob_observation)
+                                push!(intensities[row, colum], intensity)
+                                push!(ranges[row, colum], Statistics.mean(
+                                    view(cell_transformations, row:row+1, colum:colum+1))[1]
+                                )
+                            end
+                        end
+
+                        @timeit to "find_new_cells" begin
+                            for i=1:4
+                                new_cell = SVector{2,Int}(row,colum) + four_nn[i]
+                                if checkbounds(Bool, cell_visited, new_cell[1], new_cell[2])
+                                    push!(cells_to_visit, new_cell)
+                                end
+                            end
+                        end
+                    elseif isempty(probabilities[row, colum]) && prob_observation > 0.0 
+                        cells_to_filter[row,colum] = true
+                    end 
+                end
+
+                # Add cell with and do 8 connectivity for stb side
+                for i in -1:1, j in -1:1
+                    push!(cells_to_visit, row_col_stb + SVector(i,j))
+                end
+
+                horisontal_y_offset_g = horisontal_y_offset_g_stb
+
+                while !isempty(cells_to_visit)
+                    row, colum = pop!(cells_to_visit)
+
+                    if cell_visited[row ,colum]
+                        continue
+                    end
+
+                    cell_visited[row ,colum] = true
+
+                    @timeit to "cell_meas_trans" calculate_cell_measurement_transformation!(
+                        cell_transformations, row, colum, swath.odom, 
+                        map_origin, map_resolution, horisontal_y_offset_g
+                    )
+
+                    prob_observation = @timeit to "cell_probability" get_cell_probability_gaussian(
+                        cell_transformations, row, colum, sonar_beta, 
+                        sonar_ground_range_port, sonar_ground_range_stb,
+                        fbr_ground_range_port, fbr_ground_range_stb
+                    ) :: Float64
+
+                    if prob_observation >= probability_threshold
+                        intensity = @timeit to "cell_intensity" get_cell_intensity_non_corr_swath(
+                            cell_transformations, row, colum, 
+                            swath, swath_slant_resolution, n_bins,
                             corr_altitude_port, corr_altitude_stb,
                             fbr_slant_range_port, fbr_slant_range_stb
                         ) :: Float64
@@ -378,14 +458,16 @@ function generate_map_optimized!(n_rows, n_colums, n_bins, map_resolution,
 end
 
 
-function calculate_cell_measurement_transformation!(cell_transformations, row, colum, 
-                                                    measurement_frame, map_origin, map_resolution)
+function calculate_cell_measurement_transformation!(
+    cell_transformations, row, colum, measurement_frame, 
+    map_origin, map_resolution, horisontal_y_offset_g)
 
     # Get the x,y transformation from the measurement to the map cell in global coordinates
     cell_measurement_transformation = SVector(
-        (map_origin[1] - (row - 1) * map_resolution - measurement_frame[1]),
-        (map_origin[2] + (colum - 1) * map_resolution - measurement_frame[2]) 
+        (map_origin[1] - (row - 1) * map_resolution - measurement_frame[1] - horisontal_y_offset_g[1]),
+        (map_origin[2] + (colum - 1) * map_resolution - measurement_frame[2] - horisontal_y_offset_g[2]) 
     )
+
 
     # Transform the transformation to polar coordinates centered in the measurement frame
     for i=0:1, j=0:1
@@ -433,7 +515,7 @@ end
 
 
 function get_cell_intensity_non_corr_swath(cell_transformations, row, colum, 
-    swath, swath_slant_resolution, n_bins, horisontal_y_offset,
+    swath, swath_slant_resolution, n_bins, 
     corr_altitude_port, corr_altitude_stb,
     fbr_slant_range_port, fbr_slant_range_stb)
 
@@ -450,7 +532,7 @@ function get_cell_intensity_non_corr_swath(cell_transformations, row, colum,
 
     for i=0:1, j=0:1
         slant_range = sqrt(
-            (cell_transformations[row+i, colum+j][1] - horisontal_y_offset) ^ 2 + 
+            (cell_transformations[row+i, colum+j][1]) ^ 2 + 
             corrected_altitude ^ 2
         )
 
