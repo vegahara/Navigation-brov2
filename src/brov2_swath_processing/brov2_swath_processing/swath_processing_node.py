@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from csaps import csaps
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+from copy import deepcopy
 
 from rclpy.node import Node
 from rclpy.time import Time, Duration
@@ -63,13 +64,13 @@ class SwathProcessingNode(Node):
 
         # Publishers and subscribers
         self.raw_swath_sub = self.create_subscription(
-            SwathRaw, swath_raw_topic_name.value, self.swath_raw_sub, 10
+            SwathRaw, swath_raw_topic_name.value, self.swath_raw_sub, 100
         )
         self.altitude_subscription   = self.create_subscription(
-            DVL, altitude_topic_name.value, self.altitude_sub, 10
+            DVL, altitude_topic_name.value, self.altitude_sub, 100
         )
         self.odom_subscription = self.create_subscription(
-            Odometry, odometry_topic_name.value, self.odom_sub, 10
+            Odometry, odometry_topic_name.value, self.odom_sub, 100
         )
         self.swath_processed_puplisher = self.create_publisher(
             SwathProcessed, swath_processed_topic_name.value, 10
@@ -86,7 +87,8 @@ class SwathProcessingNode(Node):
         self.unprocessed_altitudes = []
         self.unprocessed_odoms = []
         self.processed_swaths = []
-        self.processed_swaths_bf =[]
+        self.processed_swaths_bf = []
+        self.estimation_swath_buffer = []
         self.sonar = SideScanSonar(
             sonar_n_bins.value, sonar_range.value,
             sonar_transducer_theta.value,sonar_transducer_alpha.value,
@@ -460,7 +462,91 @@ class SwathProcessingNode(Node):
         # plt.show()
         # input('Press any key to continue')
         return swath
+    
+    def variance_normalization(self, swath:Swath, roll:float, pitch:float) -> Swath:
 
+        window_size = 3
+        h_w = window_size // 2
+
+        bin_fbr_port, bin_fbr_stb = self.get_bin_first_bottom_return(swath, roll, pitch)
+
+        # Port
+        temp_data_port = np.empty_like(swath.data_port)
+        temp_data_port[:] = np.NaN
+
+        for bin in range(0, self.sonar.n_bins - bin_fbr_port):
+
+            intensities = []
+            r = range(max(0, bin - h_w), min(self.sonar.n_bins, bin + h_w + 1))
+
+            for i in range(len(self.estimation_swath_buffer)-10):
+                intensities.extend(self.estimation_swath_buffer[i].data_port[r])
+
+            try:
+                var = np.nanvar(intensities)
+                mean = np.nanmean(intensities)
+            except: 
+                var = 1.0
+                mean = 1.0
+            temp_data_port[bin] = (swath.data_port[bin] - mean) / np.sqrt(var)
+
+        swath.data_port = temp_data_port / 20 + 1
+
+        # Starboard
+        temp_data_stb = np.empty_like(swath.data_stb)
+        temp_data_stb[:]= np.NaN
+
+        for bin in range(bin_fbr_stb, self.sonar.n_bins):
+
+            intensities = []
+            r = range(max(0, bin - h_w), min(self.sonar.n_bins, bin + h_w + 1))
+
+            for i in range(len(self.estimation_swath_buffer)-10):
+                intensities.extend(self.estimation_swath_buffer[i].data_stb[r])
+
+            try:
+                var = np.nanvar(intensities)
+                mean = np.nanmean(intensities)
+            except: 
+                var = 1.0
+                mean = 1.0
+
+            temp_data_stb[bin] = (swath.data_stb[bin] - mean) / np.sqrt(var)
+
+        swath.data_stb = temp_data_stb / 20 + 1
+
+        # # Port
+        # temp_data_port = np.empty_like(swath.data_port)
+        # temp_data_port[:] = np.NaN
+
+        # for bin in range(0, self.sonar.n_bins - bin_fbr_port):
+
+        #     r = range(max(0, bin - h_w), min(self.sonar.n_bins, bin + h_w))
+
+        #     var = np.var(swath.data_stb[r])
+        #     mean = np.mean(swath.data_stb[r])
+        #     temp_data_port[bin] = (swath.data_port[bin] - mean) / np.sqrt(var)
+
+        # swath.data_port = temp_data_port / 20 + 1
+
+        # # Starboard
+        # temp_data_stb = np.empty_like(swath.data_stb)
+        # temp_data_stb[:]= np.NaN
+
+        # for bin in range(bin_fbr_stb, self.sonar.n_bins):
+
+        #     r = range(max(0, bin - h_w), min(self.sonar.n_bins, bin + h_w))
+
+        #     var = np.var(swath.data_port[r])
+        #     mean = np.mean(swath.data_port[r])
+
+        #     temp_data_stb[bin] = (swath.data_stb[bin] - mean) / np.sqrt(var)
+
+        # swath.data_stb = temp_data_stb / 20 + 1
+
+
+        return swath
+    
 
     def intensity_correction_srbf(self, swath:Swath, sigma:float) -> Swath:
 
@@ -580,6 +666,13 @@ class SwathProcessingNode(Node):
         # swath = self.intensity_correction_lambertian(swath, roll, pitch)
 
         swath = self.intensity_correction(swath, roll, pitch)
+
+        # if len(self.estimation_swath_buffer) >= 110:
+        #     self.estimation_swath_buffer.pop(0)
+
+        # self.estimation_swath_buffer.append(deepcopy(swath))
+
+        # swath = self.variance_normalization(swath, roll, pitch)
 
         # swath = self.slant_range_correction(swath, roll, pitch)
 
