@@ -45,7 +45,7 @@ class LandmarkDetector(Node):
                         ('processing_period', 0.001),
                         ('min_shadow_area', 0.5),
                         ('max_shadow_area', 10.0),
-                        ('min_shadow_fill_rate', 0.3),
+                        ('min_shadow_fill_rate', 0.15),
                         ('min_landmark_height', 0.2)]
         )
                       
@@ -103,6 +103,7 @@ class LandmarkDetector(Node):
 
         self.swath_buffer = []      # Buffer that contains all unprocessed corrected swaths
         self.landmarks = []
+        self.last_timestep_landmarks = []
         self.processed_swaths = []
         self.map_full = None
         self.n_timesteps = 0
@@ -305,10 +306,13 @@ class LandmarkDetector(Node):
         
         if len(self.swath_buffer) < self.swaths_per_map.value:
             return
+
+        self.n_timesteps += 1
+        print('Current timestep: ', self.n_timesteps)
         
-        low_threshold = 0.95
+        low_threshold = 0.96
         low_threshold_structuring_element_size = 3
-        high_threshold = 0.97
+        high_threshold = 0.98
         high_threshold_structuring_element_size = 3
 
         swaths = copy.deepcopy(self.swath_buffer[:self.swaths_per_map.value])
@@ -426,6 +430,7 @@ class LandmarkDetector(Node):
             cv.drawContours(temp_im, [cnt], 0, (255), -1)
 
             filter_out = True
+            landmark_at_boarder = False
 
             for col in range(x,x+w):
                 for row in range(y,y+h):
@@ -436,9 +441,15 @@ class LandmarkDetector(Node):
                     if filter[row][col]:
                         filter_out = False
 
+                    if np.isnan(intensity_map[row + 1][col]) or \
+                       np.isnan(intensity_map[row - 1][col]) or \
+                       np.isnan(intensity_map[row][col + 1]) or \
+                       np.isnan(intensity_map[row][col - 1]):
+                        landmark_at_boarder = True
+
                     observed_swaths.extend(observed_swaths_map[row][col])
 
-            if filter_out:
+            if filter_out or landmark_at_boarder:
                 continue
 
             # Remove all duplicates in observed_swaths
@@ -721,6 +732,16 @@ class LandmarkDetector(Node):
             landmark_no_height_filtered_im,landmark_no_height_filtered_im, mask = mask_height_filtering
         )
 
+        # Remove duplicate landmarks
+        for new_landmark in new_landmarks:
+            for old_landmark in self.last_timestep_landmarks:
+                if np.isclose(new_landmark.x, old_landmark.x, self.map_resolution.value, self.map_resolution.value) and \
+                   np.isclose(new_landmark.y, old_landmark.y, self.map_resolution.value, self.map_resolution.value):
+                    new_landmarks.remove(new_landmark)
+                    break
+
+        self.last_timestep_landmarks = new_landmarks
+                    
         # Save for offline SLAM
 
         # timestep = Timestep(swaths[-1].odom, new_landmarks)
@@ -741,7 +762,6 @@ class LandmarkDetector(Node):
         tick_distance = 20.0
         save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/'
 
-
         landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
         landmark_cand_low_thres_im = landmark_cand_low_thres_im.astype(np.float64)
         landmark_high_thres_im = landmark_high_thres_im.astype(np.float64)
@@ -758,8 +778,6 @@ class LandmarkDetector(Node):
 
         map_origin = [map_origin_x, map_origin_y]
         
-        self.n_timesteps += 1
-
         self.plot_landmarks(map.intensity_map, new_landmarks, landmark_cand_high_thres_im, 
                             landmark_cand_low_thres_im, landmark_high_thres_im,
                             landmark_low_thres_im, landmark_no_height_filtered_im, landmark_im,
@@ -827,8 +845,8 @@ class LandmarkDetector(Node):
             vmin, vmax, self.map_full.origin, tick_distance, save_folder, False
         )
 
-        plt.draw()
-        plt.pause(1.0)
+        # plt.draw()
+        # plt.pause(1.0)
 
     def plot_map_and_landmarks(self, fig, map, map_cmap, map_layer_lst, cmap_lst, 
                                landmarks, swaths, title, vmin, vmax, 
