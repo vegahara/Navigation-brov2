@@ -46,7 +46,7 @@ class LandmarkDetector(Node):
                         ('min_shadow_area', 0.5),
                         ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.15),
-                        ('min_landmark_height', 0.2)]
+                        ('min_landmark_height', 0.15)]
         )
                       
         (processed_swath_topic, 
@@ -603,6 +603,8 @@ class LandmarkDetector(Node):
 
                 landmark_height = altitude * (1 - min_slant_range / max_slant_range)
 
+                print("Landmark height:", landmark_height)
+
                 if landmark_height < self.min_landmark_height.value:
                     continue
 
@@ -642,6 +644,8 @@ class LandmarkDetector(Node):
             elif votes_hole > votes_boulder:
 
                 landmark_height = -altitude * (max_slant_range / min_slant_range - 1)
+
+                print("Landmark height:", landmark_height)
 
                 if abs(landmark_height) < self.min_landmark_height.value:
                     continue
@@ -760,7 +764,7 @@ class LandmarkDetector(Node):
         plt.rcParams['image.aspect'] = 'equal'
 
         tick_distance = 20.0
-        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/'
+        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/training_data/'
 
         landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
         landmark_cand_low_thres_im = landmark_cand_low_thres_im.astype(np.float64)
@@ -830,13 +834,13 @@ class LandmarkDetector(Node):
         #     vmin, vmax, map_origin, tick_distance, save_folder
         # )
 
-        # self.fig4 = self.plot_map_and_landmarks(
-        #     self.fig4, map, cmap_copper,
-        #     [landmark_no_height_filtered_im, landmark_im],
-        #     [cmap_summer, cmap_spring],
-        #     landmarks, swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
-        #     vmin, vmax, map_origin, tick_distance, save_folder
-        # )
+        self.fig4 = self.plot_map_and_landmarks(
+            self.fig4, map, cmap_copper,
+            [landmark_no_height_filtered_im, landmark_im],
+            [cmap_summer, cmap_spring],
+            landmarks, swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
+            vmin, vmax, map_origin, tick_distance, save_folder
+        )
 
         self.fig5 = self.plot_map_and_landmarks(
             self.fig5, self.map_full.intensity_map, cmap_copper,
