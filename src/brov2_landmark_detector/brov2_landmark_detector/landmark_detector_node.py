@@ -17,6 +17,9 @@ from scipy.ndimage.filters import gaussian_filter
 import copy
 import pickle
 
+import warnings
+warnings.filterwarnings("ignore")
+
 from brov2_interfaces.msg import SwathProcessed, SwathArray
 
 from julia.api import Julia
@@ -312,7 +315,7 @@ class LandmarkDetector(Node):
         
         low_threshold = 0.96
         low_threshold_structuring_element_size = 3
-        high_threshold = 0.98
+        high_threshold = 0.985
         high_threshold_structuring_element_size = 3
 
         swaths = copy.deepcopy(self.swath_buffer[:self.swaths_per_map.value])
@@ -523,81 +526,153 @@ class LandmarkDetector(Node):
             votes_hole = 0
             votes_boulder = 0
 
+            observed_swaths = observed_swaths[int(round(len(observed_swaths)/4)):int(round(len(observed_swaths) - len(observed_swaths)/4))]
+
+            plt.rcParams['text.usetex'] = True
+            plt.rcParams['font.family'] = 'serif'
+            plt.rcParams['font.sans-serif'] = 'Charter'
+            plt.rcParams['font.size'] = 12
+            plt.rcParams['figure.constrained_layout.use'] = True
+            plt.rcParams['image.aspect'] = 'equal'
+
             for i in observed_swaths:
                 swath = swaths[i]
                 if theta > np.pi:
                     y_data = swath.data_port[
-                        self.sonar.n_bins - int((max_slant_range + diff_slant_range)/self.sonar.slant_resolution):
-                        self.sonar.n_bins - int((min_slant_range - diff_slant_range)/self.sonar.slant_resolution)
+                        self.sonar.n_bins - int((max_slant_range + 2*diff_slant_range)/self.sonar.slant_resolution):
+                        self.sonar.n_bins - int((min_slant_range - 2*diff_slant_range)/self.sonar.slant_resolution)
                     ]
                     y_data = np.flip(y_data)
                 else:
                     y_data = swath.data_stb[
-                        int((min_slant_range - diff_slant_range)/self.sonar.slant_resolution):
-                        int((max_slant_range + diff_slant_range)/self.sonar.slant_resolution)
+                        int((min_slant_range - 2*diff_slant_range)/self.sonar.slant_resolution):
+                        int((max_slant_range + 2*diff_slant_range)/self.sonar.slant_resolution)
                     ]
 
-                y_data = gaussian_filter(y_data, sigma=2.0, mode = 'nearest')
+                y_data = gaussian_filter(y_data, sigma=10.0, mode = 'nearest')
 
                 x_data = np.arange(0, len(y_data))
 
-                p0 = [
-                    1.0,
+                p0_neg = [
+                    -100.0,
                     len(x_data) / 2,
-                    0.5,
-                    np.mean(y_data)
+                    20,
+                    1.0
+                ]
+
+                p0_pos = [
+                    100.0,
+                    len(x_data) / 2,
+                    20,
+                    1.0
                 ]
 
                 bounds = (
-                    [-np.inf, -np.inf, 0, -np.inf],
-                    [np.inf, np.inf, np.inf, np.inf]
+                    [-np.inf, -(2*diff_slant_range)/self.sonar.slant_resolution + len(x_data) / 2, 2, -np.inf],
+                    [np.inf, (2*diff_slant_range)/self.sonar.slant_resolution + len(x_data) / 2, np.inf, np.inf]
                 )
 
+                estimate_valid_neg = True
+                estimate_valid_pos = True
+
                 try: 
-                    popt, _pcov = curve_fit(
+                    popt_neg, pcov_neg, infodict_neg, _mesg_neg, _ier_neg = curve_fit(
                         gaussian_derivative,
                         x_data,
                         y_data,
-                        p0=p0,
-                        bounds=bounds                    
+                        p0=p0_neg,
+                        bounds=bounds,
+                        full_output = True                    
                     )
-                    if popt[0] > 0:
-                        votes_hole += 1
-                    else:
-                        votes_boulder += 1
 
-                    # plt.rcParams['text.usetex'] = True
-                    # plt.rcParams['font.family'] = 'serif'
-                    # plt.rcParams['font.sans-serif'] = 'Charter'
-                    # plt.rcParams['font.size'] = 12
-                    # plt.rcParams['figure.constrained_layout.use'] = True
-                    # plt.rcParams['image.aspect'] = 'equal'
+                    print('popt_neg: ', popt_neg)
 
-                    # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/'
-                    # title = 'gaussian_derivative_fitted'
+                    # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/classification/'
+                    # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_neg' + '_swath_' + str(i)
+
+                    # if theta > np.pi:
+                    #     title += '_port'
+                    # else:
+                    #     title += '_stb'
 
                     # plt.clf()
                     # plt.plot(x_data, y_data, c='green', label='Filtered swath')
-                    # plt.plot(x_data, gaussian_derivative(x_data, *popt), c='purple', linestyle='--', label='Fitted function')
+                    # plt.plot(x_data, gaussian_derivative(x_data, *popt_neg), c='purple', linestyle='--', label='Fitted function')
                     # plt.xlabel('Bin \#')
                     # plt.ylabel('Amplitude')
                     # plt.legend()
-                    # plt.draw()
-                    # plt.pause(0.1)
                     # plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
-                    # print(popt)
-
-                    # input('Press any key to continue')
 
                 except:
-                    # print('Not able to estimate')
+                    print('Not able to estimate with negative initialization')
+                    estimate_valid_neg = False
+
+                try:
+                    popt_pos, pcov_pos, infodict_pos, _mesg_pos, _ier_pos = curve_fit(
+                        gaussian_derivative,
+                        x_data,
+                        y_data,
+                        p0=p0_pos,
+                        bounds=bounds,
+                        full_output = True                    
+                    )
+
+                    print('popt_pos: ', popt_pos)
+
+                    # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/classification/'
+                    # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_pos' + '_swath_' + str(i)
+
+                    # if theta > np.pi:
+                    #     title += '_port'
+                    # else:
+                    #     title += '_stb'
+
+                    # plt.clf()
+                    # plt.plot(x_data, y_data, c='green', label='Filtered swath')
+                    # plt.plot(x_data, gaussian_derivative(x_data, *popt_pos), c='purple', linestyle='--', label='Fitted function')
+                    # plt.xlabel('Bin \#')
+                    # plt.ylabel('Amplitude')
+                    # plt.legend()
+                    # plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
+
+                except:
+                    print('Not able to estimate with positive initialization')
+                    estimate_valid_neg = False
+
+                if (not estimate_valid_neg) and (not estimate_valid_pos):
                     pass
+                elif estimate_valid_neg and (not estimate_valid_pos):
+                    if popt_neg[0] > 0:
+                        votes_hole += 1
+                    else:
+                        votes_boulder += 1
+                elif (not estimate_valid_neg) and estimate_valid_pos:
+                    if popt_pos[0] > 0:
+                        votes_hole += 1
+                    else:
+                        votes_boulder += 1
+                else:
+                    if (popt_neg[0] > 0) and (popt_pos[0] > 0):
+                        votes_hole += 1
+                    elif (popt_neg[0] < 0) and (popt_pos[0] < 0):
+                        votes_boulder += 1
+                    else:
+                        sum_err_neg = sum(i*i for i in infodict_neg['fvec'])
+                        sum_err_pos = sum(i*i for i in infodict_pos['fvec'])
 
+                        if sum_err_neg < sum_err_pos:
+                            if popt_neg[0] > 0:
+                                votes_hole += 1
+                            else:
+                                votes_boulder += 1
+                        else:
+                            if popt_pos[0] > 0:
+                                votes_hole += 1
+                            else:
+                                votes_boulder += 1
 
-
-
-            # print('votes_boulder: ', votes_boulder)
-            # print('votes_hole: ', votes_hole)
+            print('votes_boulder: ', votes_boulder)
+            print('votes_hole: ', votes_hole)
 
             if votes_boulder > votes_hole:
 
@@ -689,7 +764,7 @@ class LandmarkDetector(Node):
             sigma_b = 5.0 * (self.map_resolution.value / actual_ground_range)
             sigma_r = np.sqrt(self.map_resolution.value**2 + (0.5 * (max_ground_range - min_ground_range))**2)
 
-            print(sigma_r)
+            # print(sigma_r)
 
 
             landmark_pose_transformation = [
@@ -927,6 +1002,10 @@ class LandmarkDetector(Node):
             
         return fig
     
+# def gaussian_derivative(x, a, b, c, d):
+
+#     return a * (1/np.sqrt(2 * np.pi)) * (c * (x - b)) * np.exp(-((c * (x - b))**2)/2) + d
+
 def gaussian_derivative(x, a, b, c, d):
 
-    return a * (1/np.sqrt(2 * np.pi)) * (c * (x - b)) * np.exp(-((c * (x - b))**2)/2) + d
+    return a * (1/(np.sqrt(2 * np.pi) * c **3) * (x - b)) * np.exp(-(((x - b))**2)/(2* c ** 2)) + d
