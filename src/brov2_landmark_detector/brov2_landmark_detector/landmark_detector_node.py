@@ -8,14 +8,19 @@ from rclpy.node import Node
 
 import numpy as np
 import cv2 as cv
-import matplotlib
+import matplotlib.cm 
 import matplotlib.pyplot as plt
+from matplotlib import figure
 from adjustText import adjust_text
 from scipy.spatial.transform import Rotation as R
 from scipy.optimize import curve_fit
 from scipy.ndimage.filters import gaussian_filter
 import copy
-import pickle
+# import pickle
+
+from operator import itemgetter
+from pympler import muppy, summary, asizeof, tracker
+
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -45,7 +50,7 @@ class LandmarkDetector(Node):
                         ('swath_ground_range_resolution', 0.03),
                         ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
-                        ('processing_period', 0.001),
+                        ('processing_period', 0.1),
                         ('min_shadow_area', 0.5),
                         ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.15),
@@ -116,6 +121,7 @@ class LandmarkDetector(Node):
         self.fig3 = None
         self.fig4 = None
         self.fig5 = None
+        self.fig6 = None
 
         self.timer = self.create_timer(
             processing_period.value, self.landmark_detection
@@ -320,6 +326,12 @@ class LandmarkDetector(Node):
 
         swaths = copy.deepcopy(self.swath_buffer[:self.swaths_per_map.value])
         self.processed_swaths.extend(copy.deepcopy(swaths))
+
+        for s in self.processed_swaths:
+            s.data_port = []
+            s.data_stb = []
+
+        self.processed_swaths = list(set(self.processed_swaths))
         
         self.swath_buffer = self.swath_buffer[self.swaths_per_map.value//2:]
         
@@ -585,7 +597,7 @@ class LandmarkDetector(Node):
                         full_output = True                    
                     )
 
-                    print('popt_neg: ', popt_neg)
+                    # print('popt_neg: ', popt_neg)
 
                     # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/classification/'
                     # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_neg' + '_swath_' + str(i)
@@ -617,7 +629,7 @@ class LandmarkDetector(Node):
                         full_output = True                    
                     )
 
-                    print('popt_pos: ', popt_pos)
+                    # print('popt_pos: ', popt_pos)
 
                     # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/classification/'
                     # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_pos' + '_swath_' + str(i)
@@ -637,7 +649,7 @@ class LandmarkDetector(Node):
 
                 except:
                     print('Not able to estimate with positive initialization')
-                    estimate_valid_neg = False
+                    estimate_valid_pos = False
 
                 if (not estimate_valid_neg) and (not estimate_valid_pos):
                     pass
@@ -671,14 +683,14 @@ class LandmarkDetector(Node):
                             else:
                                 votes_boulder += 1
 
-            print('votes_boulder: ', votes_boulder)
-            print('votes_hole: ', votes_hole)
+            # print('votes_boulder: ', votes_boulder)
+            # print('votes_hole: ', votes_hole)
 
             if votes_boulder > votes_hole:
 
                 landmark_height = altitude * (1 - min_slant_range / max_slant_range)
 
-                print("Landmark height:", landmark_height)
+                # print("Landmark height:", landmark_height)
 
                 if landmark_height < self.min_landmark_height.value:
                     continue
@@ -720,7 +732,7 @@ class LandmarkDetector(Node):
 
                 landmark_height = -altitude * (max_slant_range / min_slant_range - 1)
 
-                print("Landmark height:", landmark_height)
+                # print("Landmark height:", landmark_height)
 
                 if abs(landmark_height) < self.min_landmark_height.value:
                     continue
@@ -814,8 +826,8 @@ class LandmarkDetector(Node):
         # Remove duplicate landmarks
         for new_landmark in new_landmarks:
             for old_landmark in self.last_timestep_landmarks:
-                if np.isclose(new_landmark.x, old_landmark.x, self.map_resolution.value, self.map_resolution.value) and \
-                   np.isclose(new_landmark.y, old_landmark.y, self.map_resolution.value, self.map_resolution.value):
+                if np.isclose(new_landmark.x, old_landmark.x, 2*self.map_resolution.value, 2*self.map_resolution.value) and \
+                   np.isclose(new_landmark.y, old_landmark.y, 2*self.map_resolution.value, 2*self.map_resolution.value):
                     new_landmarks.remove(new_landmark)
                     break
 
@@ -840,6 +852,7 @@ class LandmarkDetector(Node):
 
         tick_distance = 20.0
         save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/training_data/'
+        # save_folder = None
 
         landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
         landmark_cand_low_thres_im = landmark_cand_low_thres_im.astype(np.float64)
@@ -861,6 +874,11 @@ class LandmarkDetector(Node):
                             landmark_cand_low_thres_im, landmark_high_thres_im,
                             landmark_low_thres_im, landmark_no_height_filtered_im, landmark_im,
                             swaths, map_origin, tick_distance, save_folder)
+
+        # mem = tracker.SummaryTracker()
+        # print(sorted(mem.create_summary(), reverse=True, key=itemgetter(2))[:10])
+
+        print(asizeof.asizeof(all=True, above=1024, cutoff=10, stats=1))
 
 
     def plot_landmarks(self, map, landmarks, landmark_cand_high_thres_im, 
@@ -913,7 +931,7 @@ class LandmarkDetector(Node):
             self.fig4, map, cmap_copper,
             [landmark_no_height_filtered_im, landmark_im],
             [cmap_summer, cmap_spring],
-            landmarks, swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
+            [], swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
             vmin, vmax, map_origin, tick_distance, save_folder
         )
 
@@ -921,7 +939,14 @@ class LandmarkDetector(Node):
             self.fig5, self.map_full.intensity_map, cmap_copper,
             [],[], self.landmarks, self.processed_swaths,
             'x' + str(self.n_timesteps) + ' - all landmarks',
-            vmin, vmax, self.map_full.origin, tick_distance, save_folder, False
+            vmin, vmax, self.map_full.origin, tick_distance, save_folder, False, 'r'
+        )
+
+        self.fig6 = self.plot_map_and_landmarks(
+            self.fig6, map, cmap_copper,
+            [],[],[], swaths,
+            'x' + str(self.n_timesteps) + ' - bare_map',
+            vmin, vmax, map_origin, tick_distance, save_folder, False, '', False
         )
 
         # plt.draw()
@@ -930,10 +955,10 @@ class LandmarkDetector(Node):
     def plot_map_and_landmarks(self, fig, map, map_cmap, map_layer_lst, cmap_lst, 
                                landmarks, swaths, title, vmin, vmax, 
                                map_origin, tick_distanse=20,  save_folder=None, 
-                               plot_text = True):
+                               plot_text=True, landmark_color='k', plot_new_landmarks=True):
         
         if fig == None or save_folder != None:
-            fig = plt.figure(title)
+            fig = figure.Figure()
         else:
             fig.clf()
 
@@ -991,20 +1016,30 @@ class LandmarkDetector(Node):
                     y=-(landmark.x - map_origin[0]) / self.map_resolution.value,
                     s= r'$h_l = ' +  ('%.2f' % landmark.height) + ' m$ \n' + '$A_l = ' + ('%.2f' % landmark.area) + ' m^2$ \n' + r'$\rho_{bb} = ' + ('%.2f' % landmark.fill_rate) + '$'
                 ))
+        if plot_new_landmarks:
+            for landmark in self.last_timestep_landmarks:
+                ax1.scatter(
+                    (landmark.y - map_origin[1]) / self.map_resolution.value,
+                    -(landmark.x - map_origin[0]) / self.map_resolution.value,
+                    marker='x', c=landmark_color
+                )
+
+                if plot_text:
+                    texts.append(ax1.text(
+                        x=(landmark.y - map_origin[1]) / self.map_resolution.value,
+                        y=-(landmark.x - map_origin[0]) / self.map_resolution.value,
+                        s= r'$h_l = ' +  ('%.2f' % landmark.height) + ' m$ \n' + '$A_l = ' + ('%.2f' % landmark.area) + ' m^2$ \n' + r'$\rho_{bb} = ' + ('%.2f' % landmark.fill_rate) + '$'
+                    ))
 
         if len(texts) > 0:
             adjust_text(texts)
 
         if save_folder != None:
-            plt.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
-            plt.close(fig)
+            fig.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
             return None
             
         return fig
-    
-# def gaussian_derivative(x, a, b, c, d):
 
-#     return a * (1/np.sqrt(2 * np.pi)) * (c * (x - b)) * np.exp(-((c * (x - b))**2)/2) + d
 
 def gaussian_derivative(x, a, b, c, d):
 
