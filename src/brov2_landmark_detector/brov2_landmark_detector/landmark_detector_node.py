@@ -18,10 +18,6 @@ from scipy.ndimage.filters import gaussian_filter
 import copy
 # import pickle
 
-from operator import itemgetter
-from pympler import muppy, summary, asizeof, tracker
-
-
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -51,7 +47,7 @@ class LandmarkDetector(Node):
                         ('swaths_per_map', 100),
                         ('map_resolution', 0.1),
                         ('processing_period', 0.1),
-                        ('min_shadow_area', 0.5),
+                        ('min_shadow_area', 0.4),
                         ('max_shadow_area', 10.0),
                         ('min_shadow_fill_rate', 0.15),
                         ('min_landmark_height', 0.15)]
@@ -320,8 +316,10 @@ class LandmarkDetector(Node):
         print('Current timestep: ', self.n_timesteps)
         
         low_threshold = 0.96
+        # low_threshold = 0.96
         low_threshold_structuring_element_size = 3
-        high_threshold = 0.985
+        high_threshold = 0.98
+        # high_threshold = 0.985
         high_threshold_structuring_element_size = 3
 
         swaths = copy.deepcopy(self.swath_buffer[:self.swaths_per_map.value])
@@ -539,13 +537,6 @@ class LandmarkDetector(Node):
             votes_boulder = 0
 
             observed_swaths = observed_swaths[int(round(len(observed_swaths)/4)):int(round(len(observed_swaths) - len(observed_swaths)/4))]
-
-            plt.rcParams['text.usetex'] = True
-            plt.rcParams['font.family'] = 'serif'
-            plt.rcParams['font.sans-serif'] = 'Charter'
-            plt.rcParams['font.size'] = 12
-            plt.rcParams['figure.constrained_layout.use'] = True
-            plt.rcParams['image.aspect'] = 'equal'
 
             for i in observed_swaths:
                 swath = swaths[i]
@@ -771,13 +762,11 @@ class LandmarkDetector(Node):
                 ]
 
             else:
+                print('Not able to classify. Discarding landmark!')
                 continue
 
             sigma_b = 5.0 * (self.map_resolution.value / actual_ground_range)
             sigma_r = np.sqrt(self.map_resolution.value**2 + (0.5 * (max_ground_range - min_ground_range))**2)
-
-            # print(sigma_r)
-
 
             landmark_pose_transformation = [
                 global_landmark_pos[0] - swaths[-1].odom[0],
@@ -793,20 +782,29 @@ class LandmarkDetector(Node):
                               - np.arctan2(landmark_pose_transformation[0] , landmark_pose_transformation[1]) \
                               - swaths[-1].odom[4]) \
                               % (2 * np.pi)
-                    
-            self.landmarks.append(Landmark(
-                global_landmark_pos[0],
-                global_landmark_pos[1],
-                landmark_range,
-                sigma_r,
-                landmark_bearing,
-                sigma_b,
-                landmark_height,
-                area_shadow,
-                fill_rate,
-            ))
+            
+            # Remove duplicate landmarks
+            keep_landmark = True
 
-            new_landmarks.append(self.landmarks[-1])
+            for old_landmark in self.last_timestep_landmarks:
+                if np.isclose(global_landmark_pos[0], old_landmark.x, 3*self.map_resolution.value, 3*self.map_resolution.value) and \
+                   np.isclose(global_landmark_pos[1], old_landmark.y, 3*self.map_resolution.value, 3*self.map_resolution.value):
+                    keep_landmark = False
+
+            if keep_landmark:    
+                new_landmarks.append(Landmark(
+                    global_landmark_pos[0],
+                    global_landmark_pos[1],
+                    landmark_range,
+                    sigma_r,
+                    landmark_bearing,
+                    sigma_b,
+                    landmark_height,
+                    area_shadow,
+                    fill_rate,
+                ))
+            else:
+                continue
 
             cv.drawContours(mask_height_filtering, [cnt], 0, (255), -1)
 
@@ -823,14 +821,7 @@ class LandmarkDetector(Node):
             landmark_no_height_filtered_im,landmark_no_height_filtered_im, mask = mask_height_filtering
         )
 
-        # Remove duplicate landmarks
-        for new_landmark in new_landmarks:
-            for old_landmark in self.last_timestep_landmarks:
-                if np.isclose(new_landmark.x, old_landmark.x, 2*self.map_resolution.value, 2*self.map_resolution.value) and \
-                   np.isclose(new_landmark.y, old_landmark.y, 2*self.map_resolution.value, 2*self.map_resolution.value):
-                    new_landmarks.remove(new_landmark)
-                    break
-
+        self.landmarks.extend(new_landmarks)
         self.last_timestep_landmarks = new_landmarks
                     
         # Save for offline SLAM
@@ -874,12 +865,7 @@ class LandmarkDetector(Node):
                             landmark_cand_low_thres_im, landmark_high_thres_im,
                             landmark_low_thres_im, landmark_no_height_filtered_im, landmark_im,
                             swaths, map_origin, tick_distance, save_folder)
-
-        # mem = tracker.SummaryTracker()
-        # print(sorted(mem.create_summary(), reverse=True, key=itemgetter(2))[:10])
-
-        print(asizeof.asizeof(all=True, above=1024, cutoff=10, stats=1))
-
+        
 
     def plot_landmarks(self, map, landmarks, landmark_cand_high_thres_im, 
                        landmark_cand_low_thres_im, landmark_high_thres_im,
@@ -932,21 +918,23 @@ class LandmarkDetector(Node):
             [landmark_no_height_filtered_im, landmark_im],
             [cmap_summer, cmap_spring],
             [], swaths, 'x' + str(self.n_timesteps) + ' - height filtering',
-            vmin, vmax, map_origin, tick_distance, save_folder
+            vmin, vmax, map_origin, tick_distance, save_folder + 'height_filtering/'
         )
 
         self.fig5 = self.plot_map_and_landmarks(
             self.fig5, self.map_full.intensity_map, cmap_copper,
             [],[], self.landmarks, self.processed_swaths,
             'x' + str(self.n_timesteps) + ' - all landmarks',
-            vmin, vmax, self.map_full.origin, tick_distance, save_folder, False, 'r'
+            vmin, vmax, self.map_full.origin, tick_distance, 
+            save_folder + 'all_landmarks/', False, 'r'
         )
 
         self.fig6 = self.plot_map_and_landmarks(
             self.fig6, map, cmap_copper,
             [],[],[], swaths,
             'x' + str(self.n_timesteps) + ' - bare_map',
-            vmin, vmax, map_origin, tick_distance, save_folder, False, '', False
+            vmin, vmax, map_origin, tick_distance, 
+            save_folder + 'bare_map/', False, '', False
         )
 
         # plt.draw()
@@ -1035,7 +1023,7 @@ class LandmarkDetector(Node):
             adjust_text(texts)
 
         if save_folder != None:
-            fig.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
+            fig.savefig(save_folder + title.replace(' ', '_') + '.png', format='png', dpi=300.0)
             return None
             
         return fig
