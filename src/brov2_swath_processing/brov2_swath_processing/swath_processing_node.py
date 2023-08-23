@@ -311,6 +311,8 @@ class SwathProcessingNode(Node):
                         break
                     else:
                         altitude_timestamp_old = altitude_timestamp_new
+        else:
+            return swath, False
 
         # Return of we dont have odom and altitude newer than the sonar timestamp
         if (odom_new_index == None) or (altitude_new_index == None):
@@ -631,7 +633,7 @@ class SwathProcessingNode(Node):
 
     def process_swaths(self):
 
-        if len(self.unprocessed_swaths) == 0:
+        if not (self.unprocessed_swaths and self.unprocessed_odoms and self.unprocessed_altitudes):
             return
 
         swath = self.unprocessed_swaths[0]
