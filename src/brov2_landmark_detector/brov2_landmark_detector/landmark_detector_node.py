@@ -417,7 +417,7 @@ class LandmarkDetector(Node):
             dtype=landmark_cand_high_thres_im.dtype
         )
         
-        for cnt in contours:
+        for (n_cnt, cnt) in enumerate(contours):
 
             area_shadow = cv.contourArea(cnt) * self.map_resolution.value**2
             x,y,w,h = cv.boundingRect(cnt)
@@ -531,12 +531,19 @@ class LandmarkDetector(Node):
             min_slant_range = np.sqrt(min_ground_range**2 + altitude**2)
             max_slant_range = np.sqrt(max_ground_range**2 + altitude**2)
 
-            diff_slant_range = max_ground_range - min_slant_range
+            diff_slant_range = max_slant_range - min_slant_range
 
             votes_hole = 0
             votes_boulder = 0
 
-            observed_swaths = observed_swaths[int(round(len(observed_swaths)/4)):int(round(len(observed_swaths) - len(observed_swaths)/4))]
+            l = int(round(len(observed_swaths)/4))
+            h = int(round(len(observed_swaths) - len(observed_swaths)/4))
+
+            # Make number of swaths uneven to be able to classify.
+            if h-l % 2:
+                h += 1
+
+            observed_swaths = observed_swaths[l:h]
 
             for i in observed_swaths:
                 swath = swaths[i]
@@ -551,6 +558,8 @@ class LandmarkDetector(Node):
                         int((min_slant_range - 2*diff_slant_range)/self.sonar.slant_resolution):
                         int((max_slant_range + 2*diff_slant_range)/self.sonar.slant_resolution)
                     ]
+
+                y_data = [x for x in y_data if not np.isnan(x)]
 
                 y_data = gaussian_filter(y_data, sigma=10.0, mode = 'nearest')
 
@@ -591,7 +600,7 @@ class LandmarkDetector(Node):
                     # print('popt_neg: ', popt_neg)
 
                     # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/classification/'
-                    # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_neg' + '_swath_' + str(i)
+                    # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_neg_n_cnt_' + str(n_cnt) + '_swath_' + str(i) 
 
                     # if theta > np.pi:
                     #     title += '_port'
@@ -623,7 +632,7 @@ class LandmarkDetector(Node):
                     # print('popt_pos: ', popt_pos)
 
                     # save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/classification/'
-                    # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_pos' + '_swath_' + str(i)
+                    # title = 'gaussian_derivative_fitted_x' + str(self.n_timesteps) + '_pos_n_cnt_' + str(n_cnt) + '_swath_' + str(i)
 
                     # if theta > np.pi:
                     #     title += '_port'
@@ -842,7 +851,7 @@ class LandmarkDetector(Node):
         plt.rcParams['image.aspect'] = 'equal'
 
         tick_distance = 20.0
-        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/training_data/'
+        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/lauv_fridjof_160507_sgt1/'
         # save_folder = None
 
         landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
