@@ -540,7 +540,7 @@ class LandmarkDetector(Node):
             h = int(round(len(observed_swaths) - len(observed_swaths)/4))
 
             # Make number of swaths uneven to be able to classify.
-            if h-l % 2:
+            if (h-l-1) % 2:
                 h += 1
 
             observed_swaths = observed_swaths[l:h]
@@ -693,6 +693,7 @@ class LandmarkDetector(Node):
                 # print("Landmark height:", landmark_height)
 
                 if landmark_height < self.min_landmark_height.value:
+                    print('Landmark height below threshold. Discarding landmark!')
                     continue
 
                 actual_ground_range = np.sqrt(min_slant_range**2 - (altitude - landmark_height)**2)
@@ -735,6 +736,7 @@ class LandmarkDetector(Node):
                 # print("Landmark height:", landmark_height)
 
                 if abs(landmark_height) < self.min_landmark_height.value:
+                    print('Landmark height below threshold. Discarding landmark!')
                     continue
 
                 actual_ground_range = np.sqrt(max_slant_range**2 - (altitude + landmark_height)**2)
@@ -796,8 +798,8 @@ class LandmarkDetector(Node):
             keep_landmark = True
 
             for old_landmark in self.last_timestep_landmarks:
-                if np.isclose(global_landmark_pos[0], old_landmark.x, 3*self.map_resolution.value, 3*self.map_resolution.value) and \
-                   np.isclose(global_landmark_pos[1], old_landmark.y, 3*self.map_resolution.value, 3*self.map_resolution.value):
+                if np.isclose(global_landmark_pos[0], old_landmark.x, atol=3*self.map_resolution.value) and \
+                   np.isclose(global_landmark_pos[1], old_landmark.y, atol=3*self.map_resolution.value):
                     keep_landmark = False
 
             if keep_landmark:    
@@ -813,6 +815,7 @@ class LandmarkDetector(Node):
                     fill_rate,
                 ))
             else:
+                # print('Landmark detected in last timestep. Discarding landmark!')
                 continue
 
             cv.drawContours(mask_height_filtering, [cnt], 0, (255), -1)
