@@ -676,7 +676,7 @@ class SwathProcessingNode(Node):
 
         # swath = self.variance_normalization(swath, roll, pitch)
 
-        # swath = self.slant_range_correction(swath, roll, pitch)
+        swath = self.slant_range_correction(swath, roll, pitch)
 
         self.sonar_pub(swath)
 
