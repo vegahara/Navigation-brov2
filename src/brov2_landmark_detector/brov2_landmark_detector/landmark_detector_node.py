@@ -11,6 +11,7 @@ import cv2 as cv
 import matplotlib.cm 
 import matplotlib.pyplot as plt
 from matplotlib import figure
+from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 from adjustText import adjust_text
 from scipy.spatial.transform import Rotation as R
 from scipy.optimize import curve_fit
@@ -854,7 +855,7 @@ class LandmarkDetector(Node):
         plt.rcParams['image.aspect'] = 'equal'
 
         tick_distance = 20.0
-        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/lauv_fridjof_160507_sgt1/'
+        save_folder = '/home/repo/Navigation-brov2/images/landmark_detection/training_data_paper_figures/'
         # save_folder = None
 
         landmark_cand_high_thres_im = landmark_cand_high_thres_im.astype(np.float64)
@@ -933,21 +934,21 @@ class LandmarkDetector(Node):
             vmin, vmax, map_origin, tick_distance, save_folder + 'height_filtering/'
         )
 
-        self.fig5 = self.plot_map_and_landmarks(
-            self.fig5, self.map_full.intensity_map, cmap_copper,
-            [],[], self.landmarks, self.processed_swaths,
-            'x' + str(self.n_timesteps) + ' - all landmarks',
-            vmin, vmax, self.map_full.origin, tick_distance, 
-            save_folder + 'all_landmarks/', False, 'r'
-        )
+        # self.fig5 = self.plot_map_and_landmarks(
+        #     self.fig5, self.map_full.intensity_map, cmap_copper,
+        #     [],[], self.landmarks, self.processed_swaths,
+        #     'x' + str(self.n_timesteps) + ' - all landmarks',
+        #     vmin, vmax, self.map_full.origin, tick_distance, 
+        #     save_folder + 'all_landmarks/', False, 'r'
+        # )
 
-        self.fig6 = self.plot_map_and_landmarks(
-            self.fig6, map, cmap_copper,
-            [],[],[], swaths,
-            'x' + str(self.n_timesteps) + ' - bare_map',
-            vmin, vmax, map_origin, tick_distance, 
-            save_folder + 'bare_map/', False, '', False
-        )
+        # self.fig6 = self.plot_map_and_landmarks(
+        #     self.fig6, map, cmap_copper,
+        #     [],[],[], swaths,
+        #     'x' + str(self.n_timesteps) + ' - bare_map',
+        #     vmin, vmax, map_origin, tick_distance, 
+        #     save_folder + 'bare_map/', False, '', False
+        # )
 
         # plt.draw()
         # plt.pause(1.0)
@@ -961,6 +962,31 @@ class LandmarkDetector(Node):
             fig = figure.Figure()
         else:
             fig.clf()
+
+        landmark_pos_x1 = [-154.36046239747373, 260.2880514088111]
+        landmark_pos_x8 = [-148.90485071438684, 259.9493929864564]
+        landmark_pos_x26 = [-144.43946362914818, 263.71548955893553]  
+
+        if self.n_timesteps == 1:
+            landmark_pos = [
+                (self.last_timestep_landmarks[1].y - map_origin[1]) / self.map_resolution.value,
+                -(self.last_timestep_landmarks[1].x - map_origin[0]) / self.map_resolution.value
+            ]
+            # print([self.last_timestep_landmarks[1].x, self.last_timestep_landmarks[1].y])
+        elif self.n_timesteps == 8:
+            landmark_pos = [
+                (self.last_timestep_landmarks[0].y - map_origin[1]) / self.map_resolution.value,
+                -(self.last_timestep_landmarks[0].x - map_origin[0]) / self.map_resolution.value
+            ]
+            # print([self.last_timestep_landmarks[0].x, self.last_timestep_landmarks[0].y])
+        elif self.n_timesteps == 26:
+            landmark_pos = [
+                (self.last_timestep_landmarks[1].y - map_origin[1]) / self.map_resolution.value,
+                -(self.last_timestep_landmarks[1].x - map_origin[0]) / self.map_resolution.value
+            ]
+            # print([self.last_timestep_landmarks[1].x, self.last_timestep_landmarks[1].y])
+        else:
+            return None
 
         ax1 = fig.add_subplot(111)
 
@@ -1003,6 +1029,23 @@ class LandmarkDetector(Node):
             )
 
         texts = []
+
+        ax1.scatter(
+                (landmark_pos_x1[1] - map_origin[1]) / self.map_resolution.value,
+                -(landmark_pos_x1[0] - map_origin[0]) / self.map_resolution.value,
+                marker='x', c='green'
+            )
+        ax1.scatter(
+                (landmark_pos_x8[1] - map_origin[1]) / self.map_resolution.value,
+                -(landmark_pos_x8[0] - map_origin[0]) / self.map_resolution.value,
+                marker='x', c='green'
+            )
+        ax1.scatter(
+                (landmark_pos_x26[1] - map_origin[1]) / self.map_resolution.value,
+                -(landmark_pos_x26[0] - map_origin[0]) / self.map_resolution.value,
+                marker='x', c='green'
+            )
+
         for landmark in landmarks:
             ax1.scatter(
                 (landmark.y - map_origin[1]) / self.map_resolution.value,
@@ -1034,8 +1077,55 @@ class LandmarkDetector(Node):
         if len(texts) > 0:
             adjust_text(texts)
 
+        if self.n_timesteps == 1:
+            axins1 = zoomed_inset_axes(ax1, zoom=3.2, loc='lower left')
+        else:      
+            axins1 = zoomed_inset_axes(ax1, zoom=3.2, loc='lower right')
+
+        axins1.imshow(map, cmap=map_cmap, vmin=vmin, vmax=vmax)
+
+        for landmark_layer, cmap in zip(map_layer_lst, cmap_lst):
+            landmark_layer = landmark_layer.astype(np.uint8)
+            contours, _ = cv.findContours(landmark_layer, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+            mask = np.zeros(landmark_layer.shape[:2], dtype=landmark_layer.dtype)
+
+            for cnt in contours:
+                cv.drawContours(mask, [cnt], 0, (255), 1)
+
+            landmark_im = cv.bitwise_and(
+                landmark_layer,landmark_layer, mask = mask
+            )
+            landmark_im = landmark_im.astype(np.float64)            
+            landmark_im[landmark_im == 0.0] = np.nan
+
+            axins1.imshow(landmark_im, cmap)
+
+        zoom_size = 4.3 # metre 
+
+        x1 = int(landmark_pos[0] - zoom_size / self.map_resolution.value)
+        x2 = int(landmark_pos[0] + zoom_size / self.map_resolution.value)
+        y1 = int(landmark_pos[1] - zoom_size / self.map_resolution.value)
+        y2 = int(landmark_pos[1] + zoom_size / self.map_resolution.value)
+
+        axins1.set_xlim(x1, x2)
+        axins1.set_ylim(y2, y1)
+        axins1.tick_params(labelleft=False, labelbottom=False)
+
+        if self.n_timesteps == 1:
+            _patch, pp1, pp2 = mark_inset(ax1, axins1, loc1=2, loc2=4)
+            pp1.loc1, pp1.loc2 = 2, 3  # inset corner 1 to origin corner 4 (would expect 1)
+            pp2.loc1, pp2.loc2 = 4, 1  # inset corner 3 to origin corner 2 (would expect 3)
+        elif self.n_timesteps == 8:
+            _patch, pp1, pp2 = mark_inset(ax1, axins1, loc1=1, loc2=3)
+            pp1.loc1, pp1.loc2 = 1, 4  # inset corner 1 to origin corner 4 (would expect 1)
+            pp2.loc1, pp2.loc2 = 3, 2  # inset corner 3 to origin corner 2 (would expect 3)
+        elif self.n_timesteps == 26:
+            _patch, pp1, pp2 = mark_inset(ax1, axins1, loc1=1, loc2=2)
+            pp1.loc1, pp1.loc2 = 1, 4  # inset corner 1 to origin corner 4 (would expect 1)
+            pp2.loc1, pp2.loc2 = 2, 3  # inset corner 3 to origin corner 2 (would expect 3)
+
         if save_folder != None:
-            fig.savefig(save_folder + title.replace(' ', '_') + '.png', format='png', dpi=300.0)
+            fig.savefig(save_folder + title.replace(' ', '_') + '.eps', format='eps', dpi=300.0)
             return None
             
         return fig
